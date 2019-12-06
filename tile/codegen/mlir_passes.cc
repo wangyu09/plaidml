@@ -34,9 +34,14 @@ struct MLIRState {
 };
 
 CompilerState::CompilerState(std::shared_ptr<stripe::Program> prog)
-    : mlir(std::make_unique<MLIRState>()), prog(prog), const_bufs(nullptr) {}
+    : mlir(std::make_unique<MLIRState>()), prog(prog), const_bufs(nullptr), in_stripe(true) {}
 
 CompilerState::~CompilerState() = default;
+
+void DumpMLIR(const CompilerState& state, std::ostream* stream) {
+  llvm::raw_os_ostream os(*stream);
+  state.mlir->module->print(os);
+}
 
 void ConvertFromMLIR(CompilerState* state) {
   IVLOG(1, "Converting from Stripe MLIR");

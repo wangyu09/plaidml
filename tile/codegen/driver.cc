@@ -23,33 +23,38 @@ using namespace stripe;  // NOLINT
 
 namespace {
 
-void DumpProgram(const Block& program,            //
+void DumpProgram(CompilerState* cstate,           //
                  const OptimizeOptions& options,  //
                  const std::string& name,         //
                  size_t counter) {
   if (options.dump_passes || options.dump_passes_proto || options.dump_code) {
     boost::filesystem::create_directories(options.dbg_dir);
+
     if (options.dump_passes) {
       auto filename = str(boost::format("%02zu_%s.txt") % counter % name);
       auto path = (options.dbg_dir / filename).string();
       std::ofstream fout(path);
-      fout << program << std::endl;
+      if (cstate->in_stripe) {
+        fout << *cstate->entry() << std::endl;
+      } else {
+        DumpMLIR(*cstate, &fout);
+      }
     }
-    if (options.dump_passes_proto) {
+    if (options.dump_passes_proto && !cstate->in_stripe) {
       auto filename = str(boost::format("%02zu_%s.pb") % counter % name);
       auto path = (options.dbg_dir / filename).string();
       std::ofstream fout(path, std::ofstream::binary);
       // Save without Buffers
       Program true_program;
-      true_program.entry = std::make_shared<Block>(program);
+      true_program.entry = std::make_shared<Block>(*cstate->entry());
       auto proto = IntoProto(true_program);
       proto.SerializeToOstream(&fout);
     }
-    if (options.dump_code) {
+    if (options.dump_code && !cstate->in_stripe) {
       auto filename = str(boost::format("%02zu_%s.c") % counter % name);
       auto path = (options.dbg_dir / filename).string();
       std::ofstream fout(path);
-      fout << EmitC(program);
+      fout << EmitC(*cstate->entry());
     }
   }
 }
@@ -101,8 +106,7 @@ class ConfigsRegistry {
 
 void Optimize(CompilerState* state, const Passes& passes, const OptimizeOptions& options) {
   size_t counter = 0;
-  DumpProgram(*state->entry(), options, "initial", counter++);
-  bool in_stripe = true;
+  DumpProgram(state, options, "initial", counter++);
   for (const auto& pass : passes) {
     IVLOG(1, "Optimization Pass " << pass.name());
     std::unique_ptr<CompilePass> compile_pass =
@@ -112,22 +116,18 @@ void Optimize(CompilerState* state, const Passes& passes, const OptimizeOptions&
           str(boost::format("Unsupported pass: %1% -> %2%") % pass.name() % pass.pass().type_url())));
     }
     bool wants_stripe = compile_pass->is_stripe();
-    if (!in_stripe && wants_stripe) {
+    if (!state->in_stripe && wants_stripe) {
       ConvertFromMLIR(state);
-    } else if (in_stripe && !wants_stripe) {
+    } else if (state->in_stripe && !wants_stripe) {
       ConvertIntoMLIR(state);
     }
-    in_stripe = wants_stripe;
+    state->in_stripe = wants_stripe;
     compile_pass->Apply(state);
-    if (in_stripe) {
-      DumpProgram(*state->entry(), options, pass.name(), counter);
-    } else {
-      // DUMP MLIR
-    }
+    DumpProgram(state, options, pass.name(), counter);
     counter++;
     ValidateBlock(state->entry());
   }
-  if (!in_stripe) {
+  if (!state->in_stripe) {
     ConvertFromMLIR(state);
   }
   // Remove constants that are no longer used

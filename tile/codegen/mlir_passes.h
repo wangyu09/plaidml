@@ -10,6 +10,7 @@ namespace codegen {
 
 void ConvertFromMLIR(CompilerState* state);
 void ConvertIntoMLIR(CompilerState* state);
+void DumpMLIR(const CompilerState& state, std::ostream* stream);
 
 }  // namespace codegen
 }  // namespace tile

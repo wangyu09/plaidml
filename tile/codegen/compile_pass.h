@@ -22,6 +22,7 @@ struct CompilerState {
   std::unique_ptr<MLIRState> mlir;
   std::shared_ptr<stripe::Program> prog;
   ConstBufferManager* const_bufs;
+  bool in_stripe;
 
   stripe::Block* entry() { return prog->entry.get(); }
 };
