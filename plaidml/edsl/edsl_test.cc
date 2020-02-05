@@ -1184,6 +1184,74 @@ TEST_F(CppEdsl, AddPlain) {
   std::cout << "plaid add_plain_inplace time_first " << time_first << " us" << std::endl;
 }
 
+plaidml::edsl::Tensor add_poly_poly_coeffmod_3d(const plaidml::edsl::Tensor& cipher_a,
+                                                const plaidml::edsl::Tensor& cipher_b,
+                                                const plaidml::edsl::Tensor& coeff_modulus) {
+  plaidml::edsl::TensorDim S;  // size
+  plaidml::edsl::TensorDim L;  // coeff_mod_count
+  plaidml::edsl::TensorDim N;  // poly_modulus_degree
+
+  cipher_a.bind_dims(S, L, N);
+  cipher_b.bind_dims(S, L, N);
+  coeff_modulus.bind_dims(1, L, 1);
+
+  auto sum = plaidml::edsl::TensorOutput(S, L, N);
+  sum = cipher_a + cipher_b;
+
+  auto cmp = cast(sum >= coeff_modulus, plaidml::DType::INT64);
+  auto R_sum = sum - cmp * coeff_modulus;
+  return R_sum;
+
+  // TODO: use below instead once negi has been added to mlir standard dialect
+  /* auto tmp = cast(sum >= coeff_modulus, plaidml::DType::INT64);
+  auto cmp = cast(-tmp, plaidml::DType::UINT64);
+  return sum - (coeff_modulus & cmp); */
+}
+
+TEST_F(CppEdsl, AddCipher) {
+  long int N = 8192;
+  long int L = 3;
+  auto cipher_a = Placeholder(DType::UINT64, {2, L, N});
+  auto cipher_b = Placeholder(DType::UINT64, {2, L, N});
+  auto q = Placeholder(DType::UINT64, {1, L, 1});
+
+  auto cipher_out = add_poly_poly_coeffmod_3d(cipher_a, cipher_b, q);
+
+  Program program("add_cipher", {cipher_out});
+  IVLOG(1, "program " << program);
+  auto binder = exec::Binder(program);
+  auto executable = binder.compile();
+
+  std::vector<std::uint64_t> cipher_a_data(2 * N * L);
+  std::vector<std::uint64_t> cipher_b_data(2 * N * L);
+
+  for (size_t i = 0; i < cipher_b_data.size(); ++i) {
+    cipher_a_data[i] = i + 1;
+    cipher_b_data[i] = i + 37;
+  }
+
+  std::vector<std::uint64_t> coeff_mods{10, 20, 30};
+
+  binder.input(cipher_a).copy_from(cipher_a_data.data());
+  binder.input(cipher_b).copy_from(cipher_b_data.data());
+  binder.input(q).copy_from(coeff_mods.data());
+
+  auto t0 = std::chrono::system_clock::now();
+  executable->run();
+
+  int trials = 100;
+  auto t1 = std::chrono::system_clock::now();
+  for (int i = 0; i < trials; ++i) {
+    executable->run();
+  }
+  auto t2 = std::chrono::system_clock::now();
+  auto time = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / static_cast<float>(trials);
+  std::cout << "plaid add_cipher_inplace time " << time << " us" << std::endl;
+
+  auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  std::cout << "plaid add_cipher_inplace time_first " << time_first << " us" << std::endl;
+}
+
 plaidml::edsl::Tensor dyadic_product_coeffmod_3d(const plaidml::edsl::Tensor& Poly1, const plaidml::edsl::Tensor& Poly2,
                                                  const plaidml::edsl::Tensor& Qs, const plaidml::edsl::Tensor& CRs_0,
                                                  const plaidml::edsl::Tensor& CRs_1) {
