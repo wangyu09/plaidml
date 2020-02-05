@@ -28,11 +28,11 @@ void addToPipeline(OpPassManager &pm) {
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());
   pm.addNestedPass<FuncOp>(createCSEPass());
 
+  pm.addPass(createLoopFusionPass());
+
   pm.addPass(createLowerAffinePass());
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());
   pm.addNestedPass<FuncOp>(createCSEPass());
-
-  pm.addPass(createLoopFusionPass(1000000, 1000000, true));
 
   pm.addPass(createLowerToLLVMPass(true));
   pm.addPass(createTraceLinkingPass());

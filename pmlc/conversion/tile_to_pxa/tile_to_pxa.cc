@@ -462,16 +462,23 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
   using OpConversionPattern<FromOpType>::OpConversionPattern;
 
   PatternMatchResult match(Operation *op) const final {
-    IVLOG(2, "EltwiseOpConversion::match>");
+    IVLOG(2, "EltwiseOpConversion::match> op");
+    op->dump();
     Matcher pred;
     return pred(op);
   }
 
   void rewrite(FromOpType op, ArrayRef<Value> operands,
                ConversionPatternRewriter &rewriter) const final {
+    IVLOG(2, "EltwiseOpConversion::rewrite>");
+    IVLOG(1, "op");
+    op.dump();
     TypeConverter typeConverter;
     auto loc = op.getLoc();
     auto resultType = op.result().getType();
+    IVLOG(1, "resultType");
+    resultType.dump();
+    IVLOG(1, "\n");
     auto resultMemRefType =
         typeConverter.convertType(resultType).template cast<MemRefType>();
 
@@ -480,9 +487,11 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
         rewriter.create<AllocOp>(loc, resultMemRefType).getResult();
 
     // Make a parallel for loop to fill the result
+    IVLOG(1, "Creating AffineParallelOp");
     auto forOp = rewriter.create<pxa::AffineParallelOp>(
         loc, resultMemRefType.getShape());
     auto body = forOp.getBody();
+    IVLOG(1, "body->getNumArguments() " << body->getNumArguments());
     rewriter.setInsertionPointToStart(body);
     // TODO: Maybe fix ValueRange?
     SmallVector<Value, 8> idxs;
@@ -513,6 +522,7 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
             operandIdxs[k] = body->getArgument(j);
           }
         }
+        IVLOG(1, "Creating AffineLoadOp with operand " << operand);
         scalars.push_back(
             rewriter.create<AffineLoadOp>(loc, operand, operandIdxs));
       }
@@ -530,6 +540,7 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
                                        operandDataTypes);
 
     // Create the store
+    IVLOG(1, "Creating AffineStoreOp");
     rewriter.create<AffineStoreOp>(loc, result, resultMemRef, idxs);
 
     // Replace output with the newly allocated buffer

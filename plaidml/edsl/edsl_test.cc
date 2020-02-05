@@ -1119,65 +1119,6 @@ module {
   // runProgram(program);
 }
 
-Tensor add_poly_poly_coeffmod_2d_fast(const Tensor& cipher, const Tensor& plain, const Tensor& coeff_modulus) {
-  TensorDim L;  // coeff_mod_count
-  TensorDim N;  // poly_modulus_degree
-
-  cipher.bind_dims(L, N);
-  plain.bind_dims(L, N);
-  coeff_modulus.bind_dims(L, N);
-
-  auto sum = TensorOutput(L, N);
-  sum = cipher + plain;
-  sum = sum - coeff_modulus;
-
-  return sum;
-}
-
-TEST_F(CppEdsl, AddPlainFast) {
-  long int N = 8192;
-  long int L = 3;
-  auto cipher_in = Placeholder(DType::UINT64, {L, N});
-  auto plain_in = Placeholder(DType::UINT64, {L, N});
-  auto q = Placeholder(DType::UINT64, {L, N});
-
-  auto cipher_out = add_poly_poly_coeffmod_2d_fast(cipher_in, plain_in, q);
-
-  Program program("add_plain", {cipher_out});
-  IVLOG(1, "program " << program);
-  auto binder = exec::Binder(program);
-  auto executable = binder.compile();
-
-  std::vector<std::uint64_t> cipher_data(N * L);
-  std::vector<std::uint64_t> plain_data(N * L);
-  std::vector<std::uint64_t> coeff_mods(N * L);
-
-  for (long int i = 0; i < N * L; ++i) {
-    cipher_data[i] = i + 1;
-    plain_data[i] = i + 37;
-    coeff_mods[i] = i + 10;
-  }
-
-  binder.input(cipher_in).copy_from(cipher_data.data());
-  binder.input(plain_in).copy_from(plain_data.data());
-  binder.input(q).copy_from(coeff_mods.data());
-
-  auto t0 = std::chrono::system_clock::now();
-  executable->run();
-
-  auto trials = 100;
-  auto t1 = std::chrono::system_clock::now();
-  for (auto i = 0; i < trials; ++i) {
-    executable->run();
-  }
-  auto t2 = std::chrono::system_clock::now();
-  auto time = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / static_cast<float>(trials);
-  std::cout << "plaid add_plain_inplace time " << time << " us" << std::endl;
-
-  auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-  std::cout << "plaid add_plain_inplace time_first " << time_first << " us" << std::endl;
-}
-
 Tensor add_poly_poly_coeffmod_2d(const Tensor& cipher, const Tensor& plain, const Tensor& coeff_modulus) {
   TensorDim L;  // coeff_mod_count
   TensorDim N;  // poly_modulus_degree
@@ -1241,6 +1182,170 @@ TEST_F(CppEdsl, AddPlain) {
 
   auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
   std::cout << "plaid add_plain_inplace time_first " << time_first << " us" << std::endl;
+}
+
+plaidml::edsl::Tensor dyadic_product_coeffmod_3d(const plaidml::edsl::Tensor& Poly1, const plaidml::edsl::Tensor& Poly2,
+                                                 const plaidml::edsl::Tensor& Qs, const plaidml::edsl::Tensor& CRs_0,
+                                                 const plaidml::edsl::Tensor& CRs_1) {
+  plaidml::edsl::TensorDim S;  // size
+  plaidml::edsl::TensorDim L;  // coeff_mod_count
+  plaidml::edsl::TensorDim N;  // poly_modulus_degree
+
+  Poly1.bind_dims(S, L, N);
+  Poly2.bind_dims(1, L, N);
+  Qs.bind_dims(1, L, 1);
+  CRs_0.bind_dims(1, L, 1);
+  CRs_1.bind_dims(1, L, 1);
+
+  // [Z_hi, Z_lo] contains [64-bit, 64-bit] product of poly1 * poly2;
+  auto I1_lo_1 = cast(Poly1, plaidml::DType::UINT32);
+  auto I1_hi_1 = cast(Poly1 >> 32, plaidml::DType::UINT32);
+  auto I2_lo_1 = cast(Poly2, plaidml::DType::UINT32);
+  auto I2_hi_1 = cast(Poly2 >> 32, plaidml::DType::UINT32);
+  auto P11_1 = cast(cast(I1_hi_1, plaidml::DType::UINT64) * I2_hi_1, plaidml::DType::UINT64);
+  auto P01_1 = cast(cast(I1_lo_1, plaidml::DType::UINT64) * I2_hi_1, plaidml::DType::UINT64);
+  auto P10_1 = cast(cast(I1_hi_1, plaidml::DType::UINT64) * I2_lo_1, plaidml::DType::UINT64);
+  auto P00_1 = cast(cast(I1_lo_1, plaidml::DType::UINT64) * I2_lo_1, plaidml::DType::UINT64);
+  auto P10_1_cast = cast(cast(P10_1, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P01_1_cast = cast(cast(P01_1, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P00_1_shift = (P00_1 >> 32);
+  auto C_sum_1 = (P10_1_cast + P01_1_cast + P00_1_shift);
+  auto Carry_1 = cast(C_sum_1 >> 32, plaidml::DType::UINT64);
+  auto Z_hi = P11_1 + cast(P10_1 >> 32, plaidml::DType::UINT64) + cast(P01_1 >> 32, plaidml::DType::UINT64) + Carry_1;
+  auto Z_lo = Poly1 * Poly2;
+
+  auto I1_lo_2 = cast(Z_lo, plaidml::DType::UINT32);
+  auto I1_hi_2 = cast(Z_lo >> 32, plaidml::DType::UINT32);
+  auto I2_lo_2 = cast(CRs_0, plaidml::DType::UINT32);
+  auto I2_hi_2 = cast(CRs_0 >> 32, plaidml::DType::UINT32);
+  auto I1_hi_2_u64 = cast(I1_hi_2, plaidml::DType::UINT64);
+  auto I1_lo_2_u64 = cast(I1_lo_2, plaidml::DType::UINT64);
+  auto P11_2_u64 = cast(I1_hi_2_u64 * I2_hi_2, plaidml::DType::UINT64);
+  auto P01_2_u64 = cast(I1_lo_2_u64 * I2_hi_2, plaidml::DType::UINT64);
+  auto P10_2_u64 = cast(I1_hi_2_u64 * I2_lo_2, plaidml::DType::UINT64);
+  auto P00_2_u64 = cast(I1_lo_2_u64 * I2_lo_2, plaidml::DType::UINT64);
+  auto P10_2_cast = cast(cast(P10_2_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P01_2_cast = cast(cast(P01_2_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P00_2_shift = (P00_2_u64 >> 32);
+  auto C_sum_2 = (P10_2_cast + P01_2_cast + P00_2_shift);
+  auto Carry_2 = cast(C_sum_2 >> 32, plaidml::DType::UINT64);
+  auto Dyadic_carry = P11_2_u64 + cast(P10_2_u64 >> 32, plaidml::DType::UINT64) +
+                      cast(P01_2_u64 >> 32, plaidml::DType::UINT64) + Carry_2;
+
+  auto I1_lo_3 = cast(Z_lo, plaidml::DType::UINT32);
+  auto I1_hi_3 = cast(Z_lo >> 32, plaidml::DType::UINT32);
+  auto I2_lo_3 = cast(CRs_1, plaidml::DType::UINT32);
+  auto I2_hi_3 = cast(CRs_1 >> 32, plaidml::DType::UINT32);
+  auto I1_hi_3_u64 = cast(I1_hi_3, plaidml::DType::UINT64);
+  auto I1_lo_3_u64 = cast(I1_lo_3, plaidml::DType::UINT64);
+  auto P11_3_u64 = cast(I1_hi_3_u64 * I2_hi_3, plaidml::DType::UINT64);
+  auto P01_3_u64 = cast(I1_lo_3_u64 * I2_hi_3, plaidml::DType::UINT64);
+  auto P10_3_u64 = cast(I1_hi_3_u64 * I2_lo_3, plaidml::DType::UINT64);
+  auto P00_3_u64 = cast(I1_lo_3_u64 * I2_lo_3, plaidml::DType::UINT64);
+  auto P10_3_cast = cast(cast(P10_3_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P01_3_cast = cast(cast(P01_3_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P00_3_shift = (P00_3_u64 >> 32);
+  auto C_sum_3 = (P10_3_cast + P01_3_cast + P00_3_shift);
+  auto Carry_3 = cast(C_sum_3 >> 32, plaidml::DType::UINT64);
+  auto Tmp2_hi = P11_3_u64 + cast(P10_3_u64 >> 32, plaidml::DType::UINT64) +
+                 cast(P01_3_u64 >> 32, plaidml::DType::UINT64) + Carry_3;
+  auto Tmp2_lo = Z_lo * CRs_1;
+
+  auto Tmp1 = Tmp2_lo + Dyadic_carry;
+
+  auto C_add_uint_1 = Tmp1 < Tmp2_lo;
+  auto C_add_uint_u8_1 = cast(C_add_uint_1, plaidml::DType::UINT8);
+  auto Tmp3 = Tmp2_hi + C_add_uint_u8_1;
+
+  auto I1_lo_4 = cast(Z_hi, plaidml::DType::UINT32);
+  auto I1_hi_4 = cast(Z_hi >> 32, plaidml::DType::UINT32);
+  auto I2_lo_4 = cast(CRs_0, plaidml::DType::UINT32);
+  auto I2_hi_4 = cast(CRs_0 >> 32, plaidml::DType::UINT32);
+  auto I1_hi_4_u64 = cast(I1_hi_4, plaidml::DType::UINT64);
+  auto I1_lo_4_u64 = cast(I1_lo_4, plaidml::DType::UINT64);
+  auto P11_4_u64 = cast(I1_hi_4_u64 * I2_hi_4, plaidml::DType::UINT64);
+  auto P01_4_u64 = cast(I1_lo_4_u64 * I2_hi_4, plaidml::DType::UINT64);
+  auto P10_4_u64 = cast(I1_hi_4_u64 * I2_lo_4, plaidml::DType::UINT64);
+  auto P00_4_u64 = cast(I1_lo_4_u64 * I2_lo_4, plaidml::DType::UINT64);
+  auto P10_4_cast = cast(cast(P10_4_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P01_4_cast = cast(cast(P01_4_u64, plaidml::DType::UINT32), plaidml::DType::UINT64);
+  auto P00_4_shift = (P00_4_u64 >> 32);
+  auto C_sum_4 = (P10_4_cast + P01_4_cast + P00_4_shift);
+  auto Carry_4 = cast(C_sum_4 >> 32, plaidml::DType::UINT64);
+  auto Tmp2_hi_2 = P11_4_u64 + cast(P10_4_u64 >> 32, plaidml::DType::UINT64) +
+                   cast(P01_4_u64 >> 32, plaidml::DType::UINT64) + Carry_4;
+  auto Tmp2_lo_2 = Z_hi * CRs_0;
+
+  auto S_add_uint_2 = Tmp1 + Tmp2_lo_2;
+  auto C_add_uint_2 = S_add_uint_2 < Tmp1;
+  auto Tmp1_2 = cast(C_add_uint_2, plaidml::DType::UINT8);
+  auto Dyadic_carry_2 = Tmp2_hi_2 + Tmp1_2;
+
+  // This is all we care about
+  auto Tmp1_3 = (Z_hi * CRs_1) + Tmp3 + Dyadic_carry_2;
+
+  // Barrett subtraction
+  auto Tmp3_2 = Z_lo - (Tmp1_3 * Qs);
+
+  // Claim: One more subtraction is enough
+  auto cmp_final_cast = cast(Tmp3_2 >= Qs, plaidml::DType::INT64);
+  auto cmp_final_sub = cmp_final_cast * Qs;
+  auto R = Tmp3_2 - cmp_final_sub;
+
+  // TODO(fboemer): use below instead once negi has been added to mlir standard
+  // dialect
+  /* auto R = Tmp3_2 - (cast(-cast(Tmp3_2 >= Qs, plaidml::DType::INT64),
+                          plaidml::DType::UINT64) &
+                     Qs); */
+  return R;
+}
+
+TEST_F(CppEdsl, MultPlain) {
+  long int N = 8192;
+  long int L = 3;
+  auto cipher_in = Placeholder(DType::UINT64, {2, L, N});
+  auto plain_in = Placeholder(DType::UINT64, {1, L, N});
+  auto q = Placeholder(DType::UINT64, {1, L, 1});
+  auto cr0s = Placeholder(DType::UINT64, {1, L, 1});
+  auto cr1s = Placeholder(DType::UINT64, {1, L, 1});
+
+  auto cipher_out = dyadic_product_coeffmod_3d(cipher_in, plain_in, q, cr0s, cr1s);
+
+  Program program("mult_plain", {cipher_out});
+  IVLOG(1, "program " << program);
+  auto binder = exec::Binder(program);
+  auto executable = binder.compile();
+
+  std::vector<std::uint64_t> cipher_data(N * L);
+  std::vector<std::uint64_t> plain_data(N * L);
+
+  for (long int i = 0; i < N * L; ++i) {
+    cipher_data[i] = i + 1;
+    plain_data[i] = i + 37;
+  }
+
+  std::vector<std::uint64_t> coeff_mods{10, 20, 30};
+
+  binder.input(cipher_in).copy_from(cipher_data.data());
+  binder.input(plain_in).copy_from(plain_data.data());
+  binder.input(q).copy_from(coeff_mods.data());
+  binder.input(cr0s).copy_from(coeff_mods.data());
+  binder.input(cr1s).copy_from(coeff_mods.data());
+
+  auto t0 = std::chrono::system_clock::now();
+  executable->run();
+
+  auto trials = 100;
+  auto t1 = std::chrono::system_clock::now();
+  for (auto i = 0; i < trials; ++i) {
+    executable->run();
+  }
+  auto t2 = std::chrono::system_clock::now();
+  auto time = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / static_cast<float>(trials);
+  std::cout << "plaid mult_plain_inplace time " << time << " us" << std::endl;
+
+  auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  std::cout << "plaid mult_plain_inplace time_first " << time_first << " us" << std::endl;
 }
 
 }  // namespace
