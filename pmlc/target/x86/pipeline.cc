@@ -55,7 +55,7 @@ void addToPipeline(OpPassManager &pm) {
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());
   pm.addNestedPass<FuncOp>(createCSEPass());
 
-  pm.addPass(createLoopFusionPass());
+  // pm.addPass(createLoopFusionPass());
 
   pm.addPass(createLowerAffinePass());
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());

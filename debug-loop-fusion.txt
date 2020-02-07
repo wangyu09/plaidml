@@ -1,0 +1,63 @@
+///// Bad ///////
+
+ =====
+canonicalizeMapAndOperands
+map (d0, d1) -> (d0, d1)
+normalizedMap (d0, d1) -> (d0, d1)
+results size 2
+result d0, kind 6
+result d1, kind 6
+operand %5 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d0 + d2)>(%arg2, %arg3, %arg2, %arg3)
+operand %6 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d1 + d3)>(%arg2, %arg3, %arg2, %arg3)
+normalizedOperands %5 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d0 + d2)>(%arg2, %arg3, %arg2, %arg3)
+normalizedOperands %6 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d1 + d3)>(%arg2, %arg3, %arg2, %arg3)
+expr d0
+expr d0 is AffineDimExpr
+expr d1
+expr d1 is AffineDimExpr
+usedDims[0] = 1
+usedDims[1] = 1
+mapOrSet->getNumDims() 2
+seenDims key %6 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d1 + d3)>(%arg2, %arg3, %arg2, %arg3)
+seenDims value
+seenDims key %5 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d0 + d2)>(%arg2, %arg3, %arg2, %arg3)
+seenDims value
+dimRemapping
+dimRemapping
+mapOrSet->getNumSymbols() 0
+After canonicalizeMapAndOperands
+normalizedMap (d0, d1) -> (d0, d1)
+normalized_operand %5 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d0 + d2)>(%arg2, %arg3, %arg2, %arg3)
+normalized_operand %6 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d1 + d3)>(%arg2, %arg3, %arg2, %arg3)
+=======
+
+////// Good /////
+
+ =====
+canonicalizeMapAndOperands
+map (d0, d1) -> (d0, d1)
+normalizedMap (d0, d1) -> (0, 0)
+results size 2
+result d0, kind 6
+result d1, kind 6
+operand %4 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d0 + d2)>(%arg2, %arg3, %arg2, %arg3)
+operand %5 = affine.apply affine_map<(d0, d1, d2, d3) -> (-d1 + d3)>(%arg2, %arg3, %arg2, %arg3)
+normalizedOperands <block argument>
+
+normalizedOperands <block argument>
+
+expr 0
+expr 0 is not affine
+expr 0
+expr 0 is not affine
+usedDims[0] = 0
+usedDims[1] = 0
+mapOrSet->getNumDims() 2
+dimRemapping
+null affine expr
+dimRemapping
+null affine expr
+mapOrSet->getNumSymbols() 0
+After canonicalizeMapAndOperands
+normalizedMap () -> (0, 0)
+=======

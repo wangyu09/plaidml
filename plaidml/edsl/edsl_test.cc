@@ -1252,6 +1252,130 @@ TEST_F(CppEdsl, AddCipher) {
   std::cout << "plaid add_cipher_inplace time_first " << time_first << " us" << std::endl;
 }
 
+std::pair<Tensor, Tensor> add_uint64(Tensor operand1, Tensor operand2) {
+  auto result = operand1 + operand2;
+  auto carry = cast(result < operand1, DType::UINT64);
+  return std::make_pair(carry, result);
+}
+
+Tensor get_low_32(const Tensor& tensor) {
+  static std::int64_t lower_32_flag = 4294967295;
+  return tensor & lower_32_flag;
+}
+
+Tensor get_hi_32(const Tensor& tensor) { return tensor >> 32; }
+
+std::pair<Tensor, Tensor> decompose64_to_32(const Tensor& tensor) {
+  auto low = get_low_32(tensor);
+  auto hi = get_hi_32(tensor);
+  return std::make_pair(low, hi);
+}
+
+/*
+void multiply_uint64_generic(std::uint64_t operand1, std::uint64_t operand2,
+                             std::uint64_t* result128) {
+  auto operand1_coeff_right = operand1 & 0x00000000FFFFFFFF;
+  auto operand2_coeff_right = operand2 & 0x00000000FFFFFFFF;
+  operand1 >>= 32;
+  operand2 >>= 32;
+
+  auto middle1 = operand1 * operand2_coeff_right;
+  std::uint64_t middle;
+  auto left = operand1 * operand2 +
+              (static_cast<std::uint64_t>(add_uint64(
+                   middle1, operand2 * operand1_coeff_right, &middle))
+               << 32);
+  auto right = operand1_coeff_right * operand2_coeff_right;
+  auto temp_sum = (right >> 32) + (middle & 0x00000000FFFFFFFF);
+
+  result128[1] =
+      static_cast<std::uint64_t>(left + (middle >> 32) + (temp_sum >> 32));
+  result128[0] = static_cast<std::uint64_t>((temp_sum << 32) |
+                                            (right & 0x00000000FFFFFFFF));
+}
+*/
+std::pair<Tensor, Tensor> multiply_64(const Tensor& tensor1, const Tensor& tensor2) {
+  auto [operand1, operand1_coeff_right] = decompose64_to_32(tensor1);
+  auto [operand2, operand2_coeff_right] = decompose64_to_32(tensor2);
+
+  auto middle1 = operand1 * operand2_coeff_right;
+  auto P10_1 = operand2 * operand1_coeff_right;
+  auto P10_1_cast = get_low_32(P10_1);
+  auto P01_1_cast = get_low_32(middle1);
+  auto P00_1_shift = get_hi_32(operand1 * operand2);
+  auto C_sum_1 = (P10_1_cast + P01_1_cast + P00_1_shift);
+  auto Carry_1 = get_hi_32(C_sum_1);
+
+  auto right = operand1_coeff_right * operand2_coeff_right;
+  auto left = right + Carry_1;
+
+  auto result1 = left + get_hi_32(P10_1) + get_hi_32(middle1);
+  auto result0 = tensor1 * tensor2;
+
+  return std::make_pair(result1, result0);
+}
+
+Tensor multiply_64_hw(const Tensor& tensor1, const Tensor& tensor2) {
+  auto [I1_lo_1, I1_hi_1] = decompose64_to_32(tensor1);
+  auto [I2_lo_1, I2_hi_1] = decompose64_to_32(tensor2);
+  auto P11_1 = I1_hi_1 * I2_hi_1;
+  auto P01_1 = I1_lo_1 * I2_hi_1;
+  auto P10_1 = I1_hi_1 * I2_lo_1;
+  auto P00_1 = I1_lo_1 * I2_lo_1;
+  auto P10_1_cast = get_low_32(P10_1);
+  auto P01_1_cast = get_low_32(P01_1);
+  auto P00_1_shift = get_hi_32(P00_1);
+  auto C_sum_1 = (P10_1_cast + P01_1_cast + P00_1_shift);
+  auto Carry_1 = get_hi_32(C_sum_1);
+  auto dyadic_carry = P11_1 + get_hi_32(P10_1) + get_hi_32(P01_1) + Carry_1;
+
+  return dyadic_carry;
+}
+
+Tensor dyadic_product_coeffmod_3d_faster(const Tensor& operand1, const Tensor& operand2, const Tensor& modulus_value,
+                                         const Tensor& const_ratio_0, const Tensor& const_ratio_1) {
+  TensorDim S;  // size
+  TensorDim L;  // coeff_mod_count
+  TensorDim N;  // poly_modulus_degree
+
+  operand1.bind_dims(S, L, N);
+  operand2.bind_dims(1, L, N);
+  modulus_value.bind_dims(1, L, 1);
+  const_ratio_0.bind_dims(1, L, 1);
+  const_ratio_1.bind_dims(1, L, 1);
+
+  // [z_hi, z_lo] contains [64-bit, 64-bit] product of operand1 * operand2;
+  // start
+  auto [z_hi, z_lo] = multiply_64(operand1, operand2);
+
+  // Multiply input and const_ratio
+  // Round 1
+  auto dyadic_carry = multiply_64_hw(z_lo, const_ratio_0);
+  auto [tmp2_hi, tmp2_lo] = multiply_64(z_lo, const_ratio_1);
+  auto tmp1 = tmp2_lo + dyadic_carry;
+  auto tmp3 = tmp2_hi + cast(tmp1 < tmp2_lo, DType::UINT64);
+
+  // Round 2
+  std::tie(tmp2_hi, tmp2_lo) = multiply_64(z_hi, const_ratio_0);
+  auto [add_carry, tmp1_add] = add_uint64(tmp1, tmp2_lo);
+  dyadic_carry = tmp2_hi + add_carry;
+
+  // This is all we care about
+  tmp1_add = z_hi * const_ratio_1 + tmp3 + dyadic_carry;
+
+  // Barrett subtraction
+  tmp3 = z_lo - tmp1_add * modulus_value;
+
+  // Claim: One more subtraction is enough
+  auto result = tmp3 - cast(tmp3 >= modulus_value, DType::INT64) * modulus_value;
+
+  // TODO(fboemer): use below instead once negi has been added to mlir standard
+  // dialect
+  /* auto R = tmp3 - (cast(-cast(tmp3 >= modulus_value,
+     DType::INT64), DType::UINT64) & modulus_value); */
+  return result;
+}
+
 plaidml::edsl::Tensor dyadic_product_coeffmod_3d(const plaidml::edsl::Tensor& Poly1, const plaidml::edsl::Tensor& Poly2,
                                                  const plaidml::edsl::Tensor& Qs, const plaidml::edsl::Tensor& CRs_0,
                                                  const plaidml::edsl::Tensor& CRs_1) {
@@ -1378,6 +1502,54 @@ TEST_F(CppEdsl, MultPlain) {
   auto cr1s = Placeholder(DType::UINT64, {1, L, 1});
 
   auto cipher_out = dyadic_product_coeffmod_3d(cipher_in, plain_in, q, cr0s, cr1s);
+
+  Program program("mult_plain", {cipher_out});
+  IVLOG(1, "program " << program);
+  auto binder = exec::Binder(program);
+  auto executable = binder.compile();
+
+  std::vector<std::uint64_t> cipher_data(N * L);
+  std::vector<std::uint64_t> plain_data(N * L);
+
+  for (long int i = 0; i < N * L; ++i) {
+    cipher_data[i] = i + 1;
+    plain_data[i] = i + 37;
+  }
+
+  std::vector<std::uint64_t> coeff_mods{10, 20, 30};
+
+  binder.input(cipher_in).copy_from(cipher_data.data());
+  binder.input(plain_in).copy_from(plain_data.data());
+  binder.input(q).copy_from(coeff_mods.data());
+  binder.input(cr0s).copy_from(coeff_mods.data());
+  binder.input(cr1s).copy_from(coeff_mods.data());
+
+  auto t0 = std::chrono::system_clock::now();
+  executable->run();
+
+  auto trials = 100;
+  auto t1 = std::chrono::system_clock::now();
+  for (auto i = 0; i < trials; ++i) {
+    executable->run();
+  }
+  auto t2 = std::chrono::system_clock::now();
+  auto time = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / static_cast<float>(trials);
+  std::cout << "plaid mult_plain_inplace time " << time << " us" << std::endl;
+
+  auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  std::cout << "plaid mult_plain_inplace time_first " << time_first << " us" << std::endl;
+}
+
+TEST_F(CppEdsl, MultPlainFaster) {
+  long int N = 8192;
+  long int L = 3;
+  auto cipher_in = Placeholder(DType::UINT64, {2, L, N});
+  auto plain_in = Placeholder(DType::UINT64, {1, L, N});
+  auto q = Placeholder(DType::UINT64, {1, L, 1});
+  auto cr0s = Placeholder(DType::UINT64, {1, L, 1});
+  auto cr1s = Placeholder(DType::UINT64, {1, L, 1});
+
+  auto cipher_out = dyadic_product_coeffmod_3d_faster(cipher_in, plain_in, q, cr0s, cr1s);
 
   Program program("mult_plain", {cipher_out});
   IVLOG(1, "program " << program);

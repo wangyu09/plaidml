@@ -127,7 +127,7 @@ Executable::Executable(StringRef entry, StringRef target,
   manager.addNestedPass<FuncOp>(createCSEPass());
 
   manager.addPass(createLowerTileToPXAPass());
-  manager.addNestedPass<FuncOp>(createCanonicalizerPass());
+  // manager.addNestedPass<FuncOp>(createCanonicalizerPass());
   manager.addNestedPass<FuncOp>(createCSEPass());
 
   std::vector<MemRefType> memRefTypes;
