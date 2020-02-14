@@ -80,6 +80,10 @@ void Executable::Run(const std::map<std::string, void*>& buffers) {
   }
   void* argvec = args.data();
   uint64_t entrypoint = engine_->getFunctionAddress(invoker_name_);
+  // Run a few times to warm up
+  ((void (*)(void*))entrypoint)(argvec);
+  ((void (*)(void*))entrypoint)(argvec);
+  ((void (*)(void*))entrypoint)(argvec);
   // To get the raw execution time for generated code.
   auto start = std::chrono::high_resolution_clock::now();
   ((void (*)(void*))entrypoint)(argvec);

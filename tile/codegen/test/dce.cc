@@ -165,7 +165,7 @@ TEST(DCETest, MultiUseTest) {
       X_T2[] = +(X_T0[x0, x1]);
       X_T3 = X_T1 * X_T2;
       X_T4 = X_T3 * X_T2;
-      X_T5 = index(X_T4, 0); 
+      X_T5 = index(X_T4, 0);
     }
   )***";
 

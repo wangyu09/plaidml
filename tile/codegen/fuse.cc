@@ -657,6 +657,7 @@ static void FusionPassRecurse(const AliasMap& map, stripe::Block* block, TagFusi
 }
 
 void FusionPass::Apply(CompilerState* state) const {
+  LOG(INFO) << "Applying FusionPass\n";
   stripe::Block* root = state->entry();
   AliasMap base;
   AliasMap root_map(base, root);

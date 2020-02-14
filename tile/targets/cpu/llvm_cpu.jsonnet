@@ -133,7 +133,7 @@ local PARAMS = {
                 outer_set: ['contract_outer', 'kernel', 'cpu_thread'],
                 //outer_set: ['contract_outer', 'kernel'],
                 acc_idxs: false,
-                input_cost: 0.0, 
+                input_cost: 0.0,
                 output_cost: 0.0,
                 split_factor: -100.0,
                 cache_width: PARAMS[cfg].CACHE_WIDTH,
