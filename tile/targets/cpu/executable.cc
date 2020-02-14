@@ -83,9 +83,11 @@ void Executable::Run(const std::map<std::string, void*>& buffers) {
   // To get the raw execution time for generated code.
   auto start = std::chrono::high_resolution_clock::now();
   ((void (*)(void*))entrypoint)(argvec);
+  ((void (*)(void*))entrypoint)(argvec);
+  ((void (*)(void*))entrypoint)(argvec);
   auto stop = std::chrono::high_resolution_clock::now();
-  auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
-  IVLOG(1, "Total program execution duration: " << diff)
+  auto diff = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count() / 3;
+  LOG(INFO) << "Total program execution duration: " << diff << " (ns)";
 }
 
 void Executable::SetPerfAttrs(stripe::Block* block) {

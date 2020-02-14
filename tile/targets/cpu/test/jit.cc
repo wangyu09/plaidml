@@ -1109,7 +1109,7 @@ TEST(Jit, JitSpecialZero) {
 }
 
 TEST(Jit, AddPlain) {
-  size_t S = 2;
+  size_t S = 1;
   size_t L = 3;
   size_t N = 8192;
 
@@ -1142,9 +1142,13 @@ TEST(Jit, AddPlain) {
   };
 
   JitExecute(*main, data);
-  for (size_t i = 0; i < 10; ++i) {
+  JitExecute(*main, data);
+  JitExecute(*main, data);
+  JitExecute(*main, data);
+  JitExecute(*main, data);
+  /* for (size_t i = 0; i < 10; ++i) {
     JitExecute(*main, data);
-  }
+  } */
   LOG(INFO) << "cipher: " << cipher_buf;
   LOG(INFO) << "plain: " << plain_buf;
   LOG(INFO) << "out: " << out_buf;
