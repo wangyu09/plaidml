@@ -1,5 +1,6 @@
 // Copyright 2018 Intel Corporation.
 
+#include <chrono>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -387,6 +388,128 @@ TEST(PlaidML_C_API, Save) {
     plaidml::mapping<float> data = output.map(plaidml::map_for_read);
     EXPECT_FLOAT_EQ(data(0u, 0u), 49000);
     EXPECT_FLOAT_EQ(data(9u, 9u), 49000);
+  }
+}
+
+TEST(PlaidML_C_API, AddPlain) {
+  vai_clear_status();
+
+  std::unique_ptr<plaidml_function> matmul{plaidml_build_coded_function(R"(
+    function (C[D0,D1,D2], P) -> (R) {
+                R = C + P;
+    }
+  )",
+                                                                        nullptr)};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+
+  std::unique_ptr<vai_ctx> ctx{vai_alloc_ctx()};
+  std::unique_ptr<plaidml_device_enumerator> dev_enum{
+      plaidml_alloc_device_enumerator_with_config(ctx.get(), vertexai::testing::PlaidMLConfig(), nullptr, nullptr)};
+  std::unique_ptr<plaidml_device> dev{
+      plaidml_open_device(ctx.get(), plaidml_get_devconf(ctx.get(), dev_enum.get(), 0))};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+
+  auto N = 8192;
+  auto L = 3;
+  auto S = 2;
+
+  // TODO: change ptxt to 1 * N * L
+  auto ctxt_capacity = S * N * L;
+  auto ptxt_capacity = S * N * L;
+
+  std::unique_ptr<plaidml_buffer> cipher_inbuf{
+      plaidml_alloc_buffer(ctx.get(), dev.get(), ctxt_capacity * sizeof(uint64_t))};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+
+  std::unique_ptr<plaidml_buffer> plain_inbuf{
+      plaidml_alloc_buffer(ctx.get(), dev.get(), ptxt_capacity * sizeof(uint64_t))};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+
+  std::unique_ptr<plaidml_buffer> outbuf{plaidml_alloc_buffer(ctx.get(), dev.get(), ctxt_capacity * sizeof(uint64_t))};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+
+  // Init ciphertext
+  {
+    std::unique_ptr<plaidml_mapping> inmap{plaidml_map_buffer_discard(ctx.get(), cipher_inbuf.get())};
+    EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+    uint64_t* base = reinterpret_cast<uint64_t*>(plaidml_get_mapping_base(ctx.get(), inmap.get()));
+    ASSERT_THAT(base, NotNull());
+
+    for (int i = 0; i < ctxt_capacity; ++i) {
+      base[i] = i;
+    }
+    plaidml_writeback_mapping(ctx.get(), inmap.get());
+  }
+
+  // Init plaintext
+  {
+    std::unique_ptr<plaidml_mapping> inmap{plaidml_map_buffer_discard(ctx.get(), plain_inbuf.get())};
+    EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+    uint64_t* base = reinterpret_cast<uint64_t*>(plaidml_get_mapping_base(ctx.get(), inmap.get()));
+    ASSERT_THAT(base, NotNull());
+
+    for (int i = 0; i < ptxt_capacity; ++i) {
+      base[i] = i;
+    }
+    plaidml_writeback_mapping(ctx.get(), inmap.get());
+  }
+
+  // Create 2x3x8192 shape
+  std::unique_ptr<plaidml_shape> cipher_shape{plaidml_alloc_shape(ctx.get(), PLAIDML_DATA_UINT64)};
+  plaidml_add_dimension(ctx.get(), cipher_shape.get(), 2, 24576);
+  plaidml_add_dimension(ctx.get(), cipher_shape.get(), 3, 8192);
+  plaidml_add_dimension(ctx.get(), cipher_shape.get(), 8192, 1);
+
+  // Create 1x3x8192 shape
+  std::unique_ptr<plaidml_shape> plain_shape{plaidml_alloc_shape(ctx.get(), PLAIDML_DATA_UINT64)};
+  plaidml_add_dimension(ctx.get(), plain_shape.get(), 1, 24576);
+  plaidml_add_dimension(ctx.get(), plain_shape.get(), 3, 8192);
+  plaidml_add_dimension(ctx.get(), plain_shape.get(), 8192, 1);
+
+  std::unique_ptr<plaidml_var> out{plaidml_alloc_tensor(ctx.get(), outbuf.get(), cipher_shape.get())};
+  std::unique_ptr<plaidml_var> cipher{plaidml_alloc_tensor(ctx.get(), cipher_inbuf.get(), cipher_shape.get())};
+  std::unique_ptr<plaidml_var> plain{plaidml_alloc_tensor(ctx.get(), plain_inbuf.get(), plain_shape.get())};
+
+  std::unique_ptr<plaidml_invoker> invoker{plaidml_alloc_invoker(ctx.get(), matmul.get())};
+  plaidml_set_invoker_input(invoker.get(), "C", cipher.get());
+  plaidml_set_invoker_input(invoker.get(), "P", plain.get());
+  plaidml_set_invoker_output(invoker.get(), "R", out.get());
+
+  auto report_time = [](auto t1, auto t2, float trials = 1) {
+    auto time = (t2 - t1);
+    std::cout << "time " << std::chrono::duration_cast<std::chrono::milliseconds>(time).count() / trials << " ms\n";
+  };
+
+  auto t0 = std::chrono::system_clock::now();
+  std::unique_ptr<plaidml_invocation> invocation{plaidml_schedule_invocation(ctx.get(), invoker.get())};
+  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+  auto t1 = std::chrono::system_clock::now();
+
+  report_time(t0, t1);
+
+  auto t2 = std::chrono::system_clock::now();
+  for (auto i = 0; i < 100; ++i) {
+    std::unique_ptr<plaidml_invocation> invocation{plaidml_schedule_invocation(ctx.get(), invoker.get())};
+    //  EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+  }
+  auto t3 = std::chrono::system_clock::now();
+  report_time(t2, t3);
+
+  {
+    std::unique_ptr<plaidml_mapping> outmap{plaidml_map_buffer_current(outbuf.get(), nullptr, nullptr)};
+    EXPECT_THAT(vai_last_status(), IsVaiStatus(VAI_STATUS_OK));
+    uint64_t* base = reinterpret_cast<uint64_t*>(plaidml_get_mapping_base(ctx.get(), outmap.get()));
+    ASSERT_THAT(base, NotNull());
+
+    /* EXPECT_FLOAT_EQ(base[0], 1.0 + 8.0 + 21.0);
+    EXPECT_FLOAT_EQ(base[1], 2.0 + 10.0 + 24.0);
+    EXPECT_FLOAT_EQ(base[2], 3.0 + 12.0 + 27.0);
+    EXPECT_FLOAT_EQ(base[3], 4.0 + 20.0 + 42.0);
+    EXPECT_FLOAT_EQ(base[4], 8.0 + 25.0 + 48.0);
+    EXPECT_FLOAT_EQ(base[5], 12.0 + 30.0 + 54.0);
+    EXPECT_FLOAT_EQ(base[6], 7.0 + 32.0 + 63.0);
+    EXPECT_FLOAT_EQ(base[7], 14.0 + 40.0 + 72.0);
+    EXPECT_FLOAT_EQ(base[8], 21.0 + 48.0 + 81.0); */
   }
 }
 

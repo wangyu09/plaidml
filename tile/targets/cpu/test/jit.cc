@@ -1,5 +1,6 @@
 // Copyright 2018, Intel Corp.
 
+#include <chrono>
 #include <gmock/gmock.h>
 #include <google/protobuf/text_format.h>
 
@@ -324,7 +325,7 @@ TEST(Jit, JitMatMul) {
   auto program = GenerateStripe(runinfo);
   auto main = program->entry;
 
-  IVLOG(2, "Before>\n" << *main);
+  LOG(INFO) << "Before>\n" << *main;
 
   std::map<std::string, void*> data = {
       {"A", bufA.data()},
@@ -333,9 +334,9 @@ TEST(Jit, JitMatMul) {
   };
   JitExecute(*main, data);
 
-  IVLOG(2, "A: " << bufA);
-  IVLOG(2, "B: " << bufB);
-  IVLOG(2, "C: " << bufC);
+  LOG(INFO) << "A: " << bufA;
+  LOG(INFO) << "B: " << bufB;
+  LOG(INFO) << "C: " << bufC;
   EXPECT_THAT(bufC, ContainerEq(expected));
 }
 
@@ -773,7 +774,7 @@ TEST(Jit, JitExpSub3Nested) {
 
       stmts { special { name:"zero" outputs:"X_T1" } }
       stmts { special { name:"agg_init_add" outputs:"X_T4" } }
-      stmts { 
+      stmts {
         block {
         idxs { name: "i1" range: 3 }
         refs [
@@ -1106,6 +1107,111 @@ TEST(Jit, JitSpecialZero) {
   EXPECT_THAT(b1[2], Eq(0));
   EXPECT_THAT(b1[3], Eq(0));
 }
+
+TEST(Jit, AddPlain) {
+  size_t S = 2;
+  size_t L = 3;
+  size_t N = 8192;
+
+  size_t ctxt_size = S * L * N;
+  size_t ptxt_size = 1 * L * N;
+
+  std::vector<uint64_t> cipher_buf(ctxt_size, 1);
+  std::vector<uint64_t> plain_buf(ptxt_size, 1);
+  std::vector<uint64_t> out_buf(ctxt_size, 0);
+
+  lang::RunInfo runinfo;
+  runinfo.program_name = "add_plain";
+  runinfo.code = R"(function (C[D0,D1,D2], P) -> (O) {
+      O = C + P;
+    }
+)";
+  runinfo.input_shapes.emplace("C", SimpleShape(DataType::UINT64, {S, L, N}));
+  runinfo.input_shapes.emplace("P", SimpleShape(DataType::UINT64, {1, L, N}));
+  runinfo.output_shapes.emplace("O", SimpleShape(DataType::UINT64, {S, L, N}));
+
+  auto program = GenerateStripe(runinfo);
+  auto main = program->entry;
+
+  LOG(INFO) << "Before>\n" << *main;
+
+  std::map<std::string, void*> data = {
+      {"C", cipher_buf.data()},
+      {"P", plain_buf.data()},
+      {"O", out_buf.data()},
+  };
+
+  JitExecute(*main, data);
+  for (size_t i = 0; i < 10; ++i) {
+    JitExecute(*main, data);
+  }
+  LOG(INFO) << "cipher: " << cipher_buf;
+  LOG(INFO) << "plain: " << plain_buf;
+  LOG(INFO) << "out: " << out_buf;
+  // EXPECT_THAT(bufC, ContainerEq(expected));
+}
+
+/*
+
+TEST(Jit, JitMatMul) {
+  std::vector<float> bufA = {
+      1, 2, 3, 4, 5,  //
+      4, 5, 6, 7, 8,  //
+      7, 8, 9, 7, 8,  //
+      1, 2, 3, 1, 2,  //
+      1, 2, 3, 1, 2,  //
+  };
+
+  std::vector<float> bufB = {
+      1, 2, 3, 1, 2,  //
+      1, 2, 3, 1, 2,  //
+      1, 2, 3, 1, 2,  //
+      1, 2, 3, 1, 2,  //
+      1, 2, 3, 1, 2,  //
+  };
+
+  std::vector<float> bufC = {
+      0, 0, 0, 0, 0,  //
+      0, 0, 0, 0, 0,  //
+      0, 0, 0, 0, 0,  //
+      0, 0, 0, 0, 0,  //
+      0, 0, 0, 0, 0,  //
+  };
+
+  std::vector<float> expected = {
+      15, 30, 45,  15, 30,  //
+      30, 60, 90,  30, 60,  //
+      39, 78, 117, 39, 78,  //
+      9,  18, 27,  9,  18,  //
+      9,  18, 27,  9,  18,  //
+  };
+
+  lang::RunInfo runinfo;
+  runinfo.program_name = "matmul";
+  runinfo.code = "function (A[M, K], B[K, N]) -> (C) { C[m, n : M, N] = +(A[m, k] * B[k, n]); }";
+  size_t dim = sqrt(expected.size());
+  runinfo.input_shapes.emplace("A", SimpleShape(DataType::FLOAT32, {dim, dim}));
+  runinfo.input_shapes.emplace("B", SimpleShape(DataType::FLOAT32, {dim, dim}));
+  runinfo.output_shapes.emplace("C", SimpleShape(DataType::FLOAT32, {dim, dim}));
+
+  auto program = GenerateStripe(runinfo);
+  auto main = program->entry;
+
+  LOG(INFO) << "Before>\n" << *main;
+
+  std::map<std::string, void*> data = {
+      {"A", bufA.data()},
+      {"B", bufB.data()},
+      {"C", bufC.data()},
+  };
+  JitExecute(*main, data);
+
+  LOG(INFO) << "A: " << bufA;
+  LOG(INFO) << "B: " << bufB;
+  LOG(INFO) << "C: " << bufC;
+  EXPECT_THAT(bufC, ContainerEq(expected));
+}
+*/
 
 }  // namespace test
 }  // namespace cpu
