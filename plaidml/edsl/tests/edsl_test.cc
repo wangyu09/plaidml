@@ -1082,7 +1082,8 @@ TEST_F(CppEdsl, AddPlain) {
 
   auto cipher_out = add_poly_poly_coeffmod_2d(cipher_in, plain_in, q);
 
-  Program program("add_plain", {cipher_out});
+  auto program = ProgramBuilder("add_plain", {cipher_out}).compile();
+
   IVLOG(1, "program " << program);
   auto binder = exec::Binder(program);
   auto executable = binder.compile();
@@ -1150,7 +1151,7 @@ TEST_F(CppEdsl, AddCipher) {
 
   auto cipher_out = add_poly_poly_coeffmod_3d(cipher_a, cipher_b, q);
 
-  Program program("add_cipher", {cipher_out});
+  auto program = ProgramBuilder("add_cipher", {cipher_out}).compile();
   IVLOG(1, "program " << program);
   auto binder = exec::Binder(program);
   auto executable = binder.compile();
@@ -1425,6 +1426,48 @@ plaidml::edsl::Tensor dyadic_product_coeffmod_3d(const plaidml::edsl::Tensor& Po
   return R;
 }
 
+TEST_F(CppEdsl, NTTMult) {
+  int64_t N = 8192;
+
+  auto A = Placeholder(DType::UINT64, {N, 1});
+  auto B = Placeholder(DType::UINT64, {N, N});
+  auto C = Placeholder(DType::UINT64, {N, 1});
+
+  auto R = Dot(B, A);
+  auto program = ProgramBuilder("ntt_mult", {R}).intx(DType::UINT64).compile();
+  IVLOG(1, "program " << program);
+  auto binder = exec::Binder(program);
+  auto executable = binder.compile();
+
+  std::vector<std::uint64_t> vec_data(N * 1);
+  std::vector<std::uint64_t> mat_data(N * N);
+
+  for (uint64_t i = 0; i < vec_data.size(); ++i) {
+    vec_data[i] = i + 1;
+  }
+  for (uint64_t i = 0; i < mat_data.size(); ++i) {
+    mat_data[i] = i + 3;
+  }
+
+  binder.input(A).copy_from(vec_data.data());
+  binder.input(B).copy_from(mat_data.data());
+
+  auto t0 = std::chrono::system_clock::now();
+  executable->run();
+
+  auto trials = 100;
+  auto t1 = std::chrono::system_clock::now();
+  for (auto i = 0; i < trials; ++i) {
+    executable->run();
+  }
+  auto t2 = std::chrono::system_clock::now();
+  auto time_first = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+  std::cout << "plaid ntt_mult time_first " << time_first << " us" << std::endl;
+
+  auto time = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / static_cast<float>(trials);
+  std::cout << "plaid ntt_mult time " << time << " us" << std::endl;
+}
+
 TEST_F(CppEdsl, MultPlain) {
   long int N = 8192;
   long int L = 3;
@@ -1436,7 +1479,7 @@ TEST_F(CppEdsl, MultPlain) {
 
   auto cipher_out = dyadic_product_coeffmod_3d(cipher_in, plain_in, q, cr0s, cr1s);
 
-  Program program("mult_plain", {cipher_out});
+  auto program = ProgramBuilder("mult_plain", {cipher_out}).compile();
   IVLOG(1, "program " << program);
   auto binder = exec::Binder(program);
   auto executable = binder.compile();
@@ -1484,7 +1527,8 @@ TEST_F(CppEdsl, MultPlainFaster) {
 
   auto cipher_out = dyadic_product_coeffmod_3d_faster(cipher_in, plain_in, q, cr0s, cr1s);
 
-  Program program("mult_plain", {cipher_out});
+  auto program = ProgramBuilder("mult_plain", {cipher_out}).compile();
+
   IVLOG(1, "program " << program);
   auto binder = exec::Binder(program);
   auto executable = binder.compile();
