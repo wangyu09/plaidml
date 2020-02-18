@@ -2,8 +2,6 @@
 #
 # This BUILD file is auto-generated; do not edit!
 
-licenses(["notice"])
-
 exports_files(["LICENSE.TXT"])
 
 load(
@@ -601,7 +599,10 @@ gentbl(
             "include/llvm/Target/*.td",
             "include/llvm/Target/GlobalISel/*.td",
         ]),
-        deps = target.get("tbl_deps", []),
+        deps = target.get(
+            "tbl_deps",
+            [],
+        ),
     )
     for target in llvm_target_list
 ]
@@ -642,6 +643,18 @@ cc_binary(
     linkopts = llvm_linkopts,
     deps = [
         ":support",
+    ],
+)
+
+cc_library(
+    name = "all_targets",
+    deps = [
+        # ":aarch64_code_gen",
+        ":amdgpu_code_gen",
+        # ":arm_code_gen",
+        ":nvptx_code_gen",
+        # ":powerpc_code_gen",
+        ":x86_code_gen",
     ],
 )
 
@@ -2215,6 +2228,7 @@ cc_library(
         ":bit_writer",
         ":config",
         ":core",
+        ":frontend_open_mp",
         ":inst_combine",
         ":instrumentation",
         ":ir_reader",

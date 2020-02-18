@@ -27,7 +27,7 @@ build --action_env=https_proxy
 
 build --define=version=0.0.0.dev0
 test --test_timeout_filters=-eternal
-test --test_output=streamed
+#test --test_output=streamed
 test --test_env=HOME
 test --test_env=PLAIDML_DEVICE
 test --test_env=PLAIDML_TARGET
@@ -40,6 +40,8 @@ run --test_env=PLAIDML_SETTINGS
 run --test_sharding_strategy=disabled
 
 build:dbg -c dbg
+
+build:llvm --incompatible_enable_cc_toolchain_resolution
 
 build:linux --cpu=linux_x86_64
 build:linux --crosstool_top=//toolchain:toolchain

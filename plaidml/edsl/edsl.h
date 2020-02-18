@@ -19,6 +19,7 @@ namespace plaidml {
 namespace edsl {
 
 class IndexedTensor;
+class ProgramBuilder;
 class Program;
 struct ProgramArgument;
 class Tensor;
@@ -37,9 +38,11 @@ namespace details {
 struct Deleter {
   void operator()(plaidml_dim_expr* ptr) { ffi::call_void(plaidml_dim_expr_free, ptr); }
   void operator()(plaidml_expr* ptr) { ffi::call_void(plaidml_expr_free, ptr); }
+  void operator()(plaidml_integers* ptr) { ffi::call_void(plaidml_integers_free, ptr); }
   void operator()(plaidml_logical_shape* ptr) { ffi::call_void(plaidml_logical_shape_free, ptr); }
   void operator()(plaidml_poly_expr* ptr) { ffi::call_void(plaidml_poly_expr_free, ptr); }
   void operator()(plaidml_program* ptr) { ffi::call_void(plaidml_program_free, ptr); }
+  void operator()(plaidml_strings* ptr) { ffi::call_void(plaidml_strings_free, ptr); }
   void operator()(plaidml_tuple* ptr) { ffi::call_void(plaidml_tuple_free, ptr); }
   void operator()(plaidml_value* ptr) { ffi::call_void(plaidml_value_free, ptr); }
 };
@@ -61,11 +64,23 @@ void into_vector(std::vector<T>* into, Head&& head, Tail&&... tail) {
 }  // namespace details
 
 ///
-/// Initializes PlaidML's EDSL API.
+/// Initializes the PlaidML EDSL API.
 ///
 inline void init() {
   plaidml::init();
   ffi::call_void(plaidml_edsl_init);
+}
+
+///
+/// Lists the available targets.
+///
+inline std::vector<std::string> list_targets() {
+  auto strs = details::make_ptr(ffi::call<plaidml_strings*>(plaidml_targets_get));
+  std::vector<std::string> ret(strs->size);
+  for (size_t i = 0; i < ret.size(); i++) {
+    ret[i] = ffi::str(strs->elts[i]);
+  }
+  return ret;
 }
 
 ///
@@ -75,38 +90,28 @@ inline void init() {
 ///
 /// \ingroup edsl_objects
 /// \class Program
-/// This is a program.
 ///
 class Program {
  public:
-  ///
-  /// Program constructor
-  /// floatx is used to specify the underlying datatype of floating-point constants
-  /// intx is used to specify the underlying datatype of integer constants
-  Program(                                 //
-      const std::string& name,             //
-      const std::vector<Tensor>& outputs,  //
-      DType floatx = DType::FLOAT32,       //
-      DType intx = DType::INT32,           //
-      const std::vector<std::tuple<Tensor, Tensor>>& updates = {});
+  explicit Program(const ProgramBuilder& builder);
 
   ///
-  /// Return the Program as a string.
+  /// TODO
   ///
   std::string str() const { return ffi::str(ffi::call<plaidml_string*>(plaidml_program_repr, as_ptr())); }
 
   ///
-  /// args
+  /// TODO
   ///
   const std::vector<ProgramArgument>& args() const { return args_; }
 
   ///
-  /// inputs
+  /// TODO
   ///
   const std::vector<ProgramArgument>& inputs() const { return inputs_; }
 
   ///
-  /// outputs
+  /// TODO
   ///
   const std::vector<ProgramArgument>& outputs() const { return outputs_; }
 
@@ -117,6 +122,71 @@ class Program {
   std::vector<ProgramArgument> args_;
   std::vector<ProgramArgument> inputs_;
   std::vector<ProgramArgument> outputs_;
+};
+
+///
+/// \ingroup edsl_objects
+/// \class ProgramBuilder
+///
+class ProgramBuilder {
+  friend class Program;
+
+ public:
+  ///
+  /// TODO
+  ///
+  ProgramBuilder(const std::string& name, const std::vector<Tensor>& outputs) : name_(name), outputs_(outputs) {}
+
+  ///
+  /// floatx is used to specify the underlying datatype of floating-point constants
+  ///
+  ProgramBuilder& floatx(DType type) {
+    floatx_ = type;
+    return *this;
+  }
+
+  ///
+  /// intx is used to specify the underlying datatype of integer constants
+  ///
+  ProgramBuilder& intx(DType type) {
+    intx_ = type;
+    return *this;
+  }
+
+  ///
+  /// TODO
+  ///
+  ProgramBuilder& target(const std::string& value) {
+    target_ = value;
+    return *this;
+  }
+
+  ///
+  /// TODO
+  ///
+  ProgramBuilder& updates(const std::vector<std::tuple<Tensor, Tensor>>& value) {
+    updates_ = value;
+    return *this;
+  }
+
+  ///
+  /// TODO
+  ///
+  ProgramBuilder& debug() {
+    debug_ = true;
+    return *this;
+  }
+
+  Program compile() { return Program(*this); }
+
+ private:
+  std::string name_;
+  std::vector<Tensor> outputs_;
+  std::vector<std::tuple<Tensor, Tensor>> updates_;
+  std::string target_ = Settings::get("PLAIDML_TARGET");
+  DType floatx_ = DType::FLOAT32;
+  DType intx_ = DType::INT32;
+  bool debug_ = false;
 };
 
 ///
@@ -379,7 +449,6 @@ class IndexedTensor {
 ///
 /// \ingroup edsl_objects
 /// \class LogicalShape
-/// This is a LogicalShape.
 ///
 class LogicalShape {
   friend class Program;
@@ -387,21 +456,21 @@ class LogicalShape {
 
  public:
   ///
-  /// LogicalShape constructor
+  /// Constructor for the LogicalShape type.
   ///
   LogicalShape(DType dtype, const std::vector<int64_t>& dims)
       : ptr_(details::make_ptr(ffi::call<plaidml_logical_shape*>(
             plaidml_logical_shape_alloc, static_cast<plaidml_datatype>(dtype), dims.size(), dims.data()))) {}
 
   ///
-  /// Returns a LogicalShape as a string
+  /// Returns a string representation of this LogicalShape.
   ///
   std::string str() const {  //
     return ffi::str(ffi::call<plaidml_string*>(plaidml_logical_shape_repr, as_ptr()));
   }
 
   ///
-  /// Returns the datatype of the LogicalShape
+  /// Returns the element DType of this LogicalShape.
   ///
   DType dtype() const {
     auto ret = ffi::call<plaidml_datatype>(plaidml_logical_shape_get_dtype, as_ptr());
@@ -409,28 +478,26 @@ class LogicalShape {
   }
 
   ///
-  /// Returns the number of dimensions of the LogicalShape
+  /// Returns the number of dimensions in this LogicalShape.
   ///
-  size_t ndims() const {  //
-    return ffi::call<size_t>(plaidml_logical_shape_get_ndims, as_ptr());
+  size_t rank() const {  //
+    return ffi::call<size_t>(plaidml_logical_shape_get_rank, as_ptr());
   }
 
   ///
-  /// Returns the dimensions of the LogicalShape as a vector of integers.
+  /// Returns the sizes of this LogicalShape.
   ///
-  std::vector<int64_t> int_dims() const {
-    std::vector<int64_t> ret(ndims());
-    for (size_t i = 0; i < ret.size(); i++) {
-      ret[i] = ffi::call<int64_t>(plaidml_logical_shape_get_dim_int, as_ptr(), i);
-    }
-    return ret;
+  std::vector<int64_t> sizes() const {
+    auto ints = details::make_ptr(ffi::call<plaidml_integers*>(plaidml_logical_shape_get_sizes, as_ptr()));
+    return std::vector<int64_t>(ints->elts, ints->elts + ints->size);
   }
 
   ///
-  /// TODO
+  /// Equality comparison for LogicalShape types.
   ///
   bool operator==(const LogicalShape& rhs) const { return str() == rhs.str(); }
 
+  // This is an internal method.
   plaidml_logical_shape* as_ptr() const { return ptr_.get(); }
 
  private:
@@ -482,6 +549,15 @@ class Tensor {
   ///
   explicit Tensor(unsigned value) : impl_(new Impl) {  //
     impl_->ptr = details::make_ptr(ffi::call<plaidml_expr*>(plaidml_expr_int, value));
+  }
+
+  ///
+  /// Tensor constructor
+  /// \param value uint64_t
+  /// \return Tensor
+  ///
+  explicit Tensor(uint64_t value) : impl_(new Impl) {  //
+    impl_->ptr = details::make_ptr(ffi::call<plaidml_expr*>(plaidml_expr_uint, value));
   }
 
   ///
@@ -1081,47 +1157,45 @@ inline Tensor zero() { return Tensor{0}; }
 
 /// @}
 
-inline Program::Program(                 //
-    const std::string& name,             //
-    const std::vector<Tensor>& outputs,  //
-    DType floatx,                        //
-    DType intx,                          //
-    const std::vector<std::tuple<Tensor, Tensor>>& updates) {
-  std::vector<plaidml_expr*> raw_outputs(outputs.size());
-  std::vector<plaidml_expr*> new_outputs(outputs.size());
+inline Program::Program(const ProgramBuilder& builder) {
+  std::vector<plaidml_expr*> raw_outputs(builder.outputs_.size());
+  std::vector<plaidml_expr*> new_outputs(builder.outputs_.size());
   for (size_t i = 0; i < raw_outputs.size(); i++) {
-    auto ptr = outputs[i].as_ptr();
+    auto ptr = builder.outputs_[i].as_ptr();
     if (!ptr) {
       std::stringstream ss;
-      ss << "Invalid tensor output requested by Program: " << outputs[i].str();
+      ss << "Invalid tensor output requested by Program: " << builder.outputs_[i].str();
       throw std::runtime_error(ss.str());
     }
     raw_outputs[i] = ptr;
   }
   std::vector<plaidml_expr*> src_updates;
   std::vector<plaidml_expr*> dst_updates;
-  for (size_t i = 0; i < updates.size(); i++) {
-    dst_updates[i] = std::get<0>(updates[i]).as_ptr();
-    src_updates[i] = std::get<1>(updates[i]).as_ptr();
+  for (size_t i = 0, e = builder.updates_.size(); i < e; ++i) {
+    dst_updates[i] = std::get<0>(builder.updates_[i]).as_ptr();
+    src_updates[i] = std::get<1>(builder.updates_[i]).as_ptr();
   }
   plaidml_program_args* args;
   ptr_ = details::make_ptr(ffi::call<plaidml_program*>(  //
-      plaidml_program_evaluate,                          //
-      name.c_str(),                                      //
+      plaidml_compile,                                   //
+      builder.name_.c_str(),                             //
+      builder.target_.c_str(),                           //
       raw_outputs.size(),                                //
       raw_outputs.data(),                                //
-      updates.size(),                                    //
+      builder.updates_.size(),                           //
       src_updates.data(),                                //
       dst_updates.data(),                                //
-      static_cast<plaidml_datatype>(floatx),             //
-      static_cast<plaidml_datatype>(intx), &args));
-  for (size_t i = 0; i < args->nargs; i++) {
-    const auto& arg = args->args[i];
+      static_cast<plaidml_datatype>(builder.floatx_),    //
+      static_cast<plaidml_datatype>(builder.intx_),      //
+      builder.debug_,                                    //
+      &args));
+  for (size_t i = 0; i < args->size; i++) {
+    const auto& arg = args->elts[i];
     Tensor tensor(ffi::call<plaidml_expr*>(plaidml_expr_clone, arg.tensor));
     LogicalShape shape(ffi::call<plaidml_logical_shape*>(plaidml_logical_shape_clone, arg.shape));
     ProgramArgument programArg{arg.is_input, tensor, shape};
     if (arg.buffer) {
-      TensorShape tensor_shape(shape.dtype(), shape.int_dims());
+      TensorShape tensor_shape(shape.dtype(), shape.sizes());
       auto bufptr = ffi::call<plaidml_buffer*>(plaidml_buffer_clone, arg.buffer);
       programArg.buffer = std::make_shared<Buffer>(bufptr, tensor_shape);
     }
@@ -1191,13 +1265,15 @@ PLAIDML_EDSL_DEFINE_TENSOR_DIM_BINARY_FN(min, PLAIDML_INT_OP_MIN);
 inline Tensor Tensor::operator-() const { return Call("neg", {*this}); }
 inline Tensor Tensor::operator~() const { return Call("bit_not", {*this}); }
 
-#define PLAIDML_EDSL_DEFINE_TENSOR_BINARY_OPS(_op_, _fn_)                                              \
-  inline Tensor operator _op_(const Tensor& lhs, const Tensor& rhs) { return Call(_fn_, lhs, rhs); }   \
-  inline Tensor operator _op_(const Tensor& lhs, int rhs) { return Call(_fn_, lhs, Tensor{rhs}); }     \
-  inline Tensor operator _op_(const Tensor& lhs, int64_t rhs) { return Call(_fn_, lhs, Tensor{rhs}); } \
-  inline Tensor operator _op_(const Tensor& lhs, double rhs) { return Call(_fn_, lhs, Tensor{rhs}); }  \
-  inline Tensor operator _op_(int lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); }     \
-  inline Tensor operator _op_(int64_t lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); } \
+#define PLAIDML_EDSL_DEFINE_TENSOR_BINARY_OPS(_op_, _fn_)                                               \
+  inline Tensor operator _op_(const Tensor& lhs, const Tensor& rhs) { return Call(_fn_, lhs, rhs); }    \
+  inline Tensor operator _op_(const Tensor& lhs, int rhs) { return Call(_fn_, lhs, Tensor{rhs}); }      \
+  inline Tensor operator _op_(const Tensor& lhs, int64_t rhs) { return Call(_fn_, lhs, Tensor{rhs}); }  \
+  inline Tensor operator _op_(const Tensor& lhs, uint64_t rhs) { return Call(_fn_, lhs, Tensor{rhs}); } \
+  inline Tensor operator _op_(const Tensor& lhs, double rhs) { return Call(_fn_, lhs, Tensor{rhs}); }   \
+  inline Tensor operator _op_(int lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); }      \
+  inline Tensor operator _op_(int64_t lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); }  \
+  inline Tensor operator _op_(uint64_t lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); } \
   inline Tensor operator _op_(double lhs, const Tensor& rhs) { return Call(_fn_, Tensor{lhs}, rhs); }
 
 PLAIDML_EDSL_DEFINE_TENSOR_BINARY_OPS(+, "add");
@@ -1377,7 +1453,7 @@ class Value {
 
   std::vector<Value> as_tuple() const {
     auto tuple = details::make_ptr(ffi::call<plaidml_tuple*>(plaidml_value_tuple_get, as_ptr()));
-    std::vector<Value> ret(tuple->nelts);
+    std::vector<Value> ret(tuple->size);
     for (size_t i = 0; i < ret.size(); i++) {
       ret[i] = Value{tuple->elts[i]};
     }
@@ -1386,7 +1462,7 @@ class Value {
 
   std::vector<int64_t> as_int_tuple() const {
     auto tuple = details::make_ptr(ffi::call<plaidml_tuple*>(plaidml_value_tuple_get, as_ptr()));
-    std::vector<int64_t> ret(tuple->nelts);
+    std::vector<int64_t> ret(tuple->size);
     for (size_t i = 0; i < ret.size(); i++) {
       ret[i] = Value{tuple->elts[i]}.as_int();
     }

@@ -19,12 +19,14 @@ import lit.llvm
 config.llvm_tools_dir = os.path.join(os.environ['TEST_SRCDIR'], 'llvm-project', 'llvm')
 config.mlir_obj_root = os.path.join(os.environ['TEST_SRCDIR'])
 config.mlir_tools_dir = os.path.join(os.environ['TEST_SRCDIR'], 'llvm-project', 'mlir')
-config.suffixes = ['.td', '.mlir', '.pbtxt']
+config.suffixes = ['.td', '.mlir', '.pbtxt', '.cc', '.py']
 
 mlir_pmlc_tools_dirs = [
+    'pmlc/tools/pmlc-jit',
     'pmlc/tools/pmlc-opt',
     'pmlc/tools/pmlc-tblgen',
     'pmlc/tools/pmlc-translate',
+    'plaidml/edsl/tests',
 ]
 config.mlir_pmlc_tools_dirs = [
     os.path.join(os.environ['TEST_SRCDIR'], os.environ['TEST_WORKSPACE'], s)
@@ -46,5 +48,5 @@ lit_config.load_config(
         os.path.join(
             os.environ['TEST_SRCDIR'],
             os.environ['TEST_WORKSPACE'],
-            'pmlc/runlit.cfg.py',
+            'pmlc/lit.cfg.py',
         )))

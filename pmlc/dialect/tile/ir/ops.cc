@@ -475,6 +475,10 @@ void ContractionOp::build(Builder *builder, OperationState &result,
   }
 }
 
+AffineMap ContractionOp::getSourceMap(unsigned i) {
+  return srcs().getValue()[i].cast<AffineMapAttr>().getValue();
+}
+
 void ContractionOp::setLowerBounds(ArrayRef<int64_t> bounds) {
   SmallVector<AffineExpr, 6> exprs;
   for (auto dim : bounds) {
@@ -1221,10 +1225,10 @@ struct TraceOpCanonicalizer : public OpRewritePattern<TraceOp> {
                                      PatternRewriter &rewriter) const override {
     IVLOG(5,
           "TraceOpCanonicalizer::matchAndRewrite> " << mlir::debugString(op));
-    if (op.tensor().getType() == op.result().getType()) {
+    if (op.in().getType() == op.out().getType()) {
       return Pattern::matchFailure();
     }
-    auto newOp = rewriter.create<TraceOp>(op.getLoc(), op.tensor(), op.msg());
+    auto newOp = rewriter.create<TraceOp>(op.getLoc(), op.in(), op.msg());
     rewriter.replaceOp(op, {newOp});
     util::UpdateFuncOpType(newOp.getOperation());
     return Pattern::matchSuccess();

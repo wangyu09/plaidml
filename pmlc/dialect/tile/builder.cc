@@ -2,6 +2,7 @@
 
 #include "pmlc/dialect/tile/builder.h"
 
+#include <limits>
 #include <map>
 #include <queue>
 #include <set>
@@ -16,6 +17,7 @@
 
 #include "mlir/Analysis/Verifier.h"
 #include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Function.h"
 #include "mlir/IR/Matchers.h"
@@ -34,7 +36,6 @@
 #include "pmlc/dialect/tile/gradient.h"
 #include "pmlc/dialect/tile/ir/dialect.h"
 #include "pmlc/dialect/tile/ir/ops.h"
-#include "pmlc/dialect/tile/program.h"
 #include "pmlc/dialect/tile/transforms/passes.h"
 #include "pmlc/util/env.h"
 #include "pmlc/util/logging.h"
@@ -83,7 +84,6 @@ struct TileBuilder::Impl {
   llvm::DenseMap<Value, BufferPtr> implicitBindings;
   llvm::DenseMap<Value, RankedTensorType> shapeCache;
   NoneOp noneOp;
-  Value defaultInit;
   Location loc;
   unsigned idxCounter = 0;
 
@@ -91,7 +91,6 @@ struct TileBuilder::Impl {
       : module(ModuleOp::create(UnknownLoc::get(&context))),
         builder(module.getBody()), loc(builder.getUnknownLoc()) {
     builder.setInsertionPointToStart(module.getBody());
-    defaultInit = makeScalarConstantOp(0.0);
   }
 
   Type inferElementType(ArrayRef<Type> types) {
@@ -156,9 +155,50 @@ struct TileBuilder::Impl {
     return op.result();
   }
 
+  Value makeScalarConstantOp(int64_t value) {
+    auto type = builder.getType<ScalarType>(DataType::i32);
+    return builder.create<ScalarConstantOp>(loc, type, value).result();
+  }
+
   Value makeScalarConstantOp(double value) {
     auto type = builder.getType<ScalarType>(DataType::f32);
     return builder.create<ScalarConstantOp>(loc, type, value).result();
+  }
+
+  Value makeIdentity(ScalarType elemType, util::AggregationKind agg) {
+    switch (agg) {
+    case util::AggregationKind::assign:
+    case util::AggregationKind::add:
+      if (isFloat(elemType.type())) {
+        return makeScalarConstantOp(0.0);
+      } else {
+        return makeScalarConstantOp(int64_t(0));
+      }
+    case util::AggregationKind::mul:
+      if (isFloat(elemType.type())) {
+        return makeScalarConstantOp(1.0);
+      } else {
+        return makeScalarConstantOp(int64_t(1));
+      }
+    case util::AggregationKind::min:
+      if (isFloat(elemType.type())) {
+        return makeScalarConstantOp(std::numeric_limits<double>::infinity());
+      } else if (isSigned(elemType.type())) {
+        return makeScalarConstantOp(std::numeric_limits<int64_t>::max());
+      } else {
+        return makeScalarConstantOp(
+            static_cast<int64_t>(std::numeric_limits<uint64_t>::max()));
+      }
+    case util::AggregationKind::max:
+      if (isFloat(elemType.type())) {
+        return makeScalarConstantOp(-std::numeric_limits<double>::infinity());
+      } else if (isSigned(elemType.type())) {
+        return makeScalarConstantOp(std::numeric_limits<int64_t>::min());
+      } else {
+        return makeScalarConstantOp(int64_t(0));
+      }
+    }
+    llvm_unreachable("Invalid aggregation kind");
   }
 };
 
@@ -258,7 +298,13 @@ RankedTensorType TileBuilder::ComputeShape(Value tensor) {
   ProgramMutations mutations;
   mutations.outputs.emplace_back(tensor);
   auto program = MakeProgram("compute_shape", mutations);
-  auto shape = program->outputs[0].getType().dyn_cast<RankedTensorType>();
+  RankedTensorType shape;
+  for (const auto &arg : program->arguments) {
+    if (!arg.isInput) {
+      shape = arg.shape;
+      break;
+    }
+  }
   impl->shapeCache.insert(std::make_pair(tensor, shape));
   return shape;
 }
@@ -275,7 +321,7 @@ Value TileBuilder::MakeCastOp(Value tensor, DataType dtype) {
 
 Value TileBuilder::MakeTraceOp(Value tensor, const char *msg) {
   IVLOG(5, "TileBuilder::MakeTraceOp> " << msg);
-  return impl->builder.create<TraceOp>(impl->loc, tensor, msg).result();
+  return impl->builder.create<TraceOp>(impl->loc, tensor, msg).out();
 }
 
 Value TileBuilder::MakePrimitiveOp(StringRef fn, ArrayRef<Value> args) {
@@ -343,11 +389,16 @@ std::vector<Value> TileBuilder::GetTupleElements(Value value) {
   throw std::runtime_error("Expected TupleOp");
 }
 
-Value TileBuilder::MakeScalarConstantOp(int64_t value) {
+Value TileBuilder::MakeScalarConstantOp(uint64_t value) {
   IVLOG(5, "TileBuilder::MakeScalarConstantOp> " << value);
   auto type = impl->builder.getType<ScalarType>(DataType::i32);
   return impl->builder.create<ScalarConstantOp>(impl->loc, type, value)
       .result();
+}
+
+Value TileBuilder::MakeScalarConstantOp(int64_t value) {
+  IVLOG(5, "TileBuilder::MakeScalarConstantOp> " << value);
+  return impl->makeScalarConstantOp(value);
 }
 
 int64_t TileBuilder::GetIntegerValue(Value value) {
@@ -506,13 +557,12 @@ void TileBuilder::SetNoReduce(Value cion, bool no_reduce) {
   }
 }
 
-Value TileBuilder::MakeContractionOp(util::AggregationKind agg,
-                                     util::CombinationKind combo,
+Value TileBuilder::MakeContractionOp(AggregationKind agg, CombinationKind combo,
                                      ArrayRef<Value> srcs, Value sink,
                                      Value sizes, StringRef name) {
   IVLOG(5, "TileBuilder::MakeContractionOp> "
-               << util::stringifyAggregationKind(agg).str() << ":"
-               << util::stringifyCombinationKind(combo).str()
+               << stringifyAggregationKind(agg).str() << ":"
+               << stringifyCombinationKind(combo).str()
                << ", name: " << name.str());
   IVLOG(5, "\n" << mlir::debugString(impl->module));
   // TODO: handle names (and idx_names)
@@ -539,8 +589,9 @@ Value TileBuilder::MakeContractionOp(util::AggregationKind agg,
   if (name.size()) {
     nameAttr = impl->builder.getStringAttr(name);
   }
+  Value ident = impl->makeIdentity(elementType.cast<ScalarType>(), agg);
   auto op = impl->builder.create<SymbolicContractionOp>(
-      impl->loc, RankedTensorType::get(shape, elementType), impl->defaultInit,
+      impl->loc, RankedTensorType::get(shape, elementType), ident,
       impl->builder.create<AffineConstraintsOp>(impl->loc), sizes, sink, srcs,
       impl->builder.getI64IntegerAttr(static_cast<int64_t>(agg)),
       impl->builder.getI64IntegerAttr(static_cast<int64_t>(combo)), UnitAttr{},
@@ -593,9 +644,9 @@ struct MakeProgramPass : public mlir::FunctionPass<MakeProgramPass> {
   }
 };
 
-std::shared_ptr<TileProgram>
+std::shared_ptr<compiler::Program>
 TileBuilder::MakeProgram(StringRef name, const ProgramMutations &mutations,
-                         util::DataType floatx, util::DataType intx) {
+                         DataType floatx, DataType intx) {
   if (name.empty()) {
     name = "noname";
   }
@@ -629,7 +680,7 @@ TileBuilder::MakeProgram(StringRef name, const ProgramMutations &mutations,
   // Construct a module
   auto loc = UnknownLoc::get(&impl->context);
   auto module = ModuleOp::create(loc);
-  auto program = std::make_shared<TileProgram>(module);
+  auto program = std::make_shared<compiler::Program>(module);
   program->entry = name;
   // Construct a function to represent the entire program
   auto initialFuncType = FunctionType::get(inputTypes, {}, &impl->context);
@@ -655,8 +706,8 @@ TileBuilder::MakeProgram(StringRef name, const ProgramMutations &mutations,
         }
         IVLOG(5, "BlockArgument mapping: " << value << " -> " << blockArg);
         mapper.map(value, blockArg);
-        ProgramArgument programArg{true, value,
-                                   value.getType().cast<RankedTensorType>()};
+        compiler::ProgramArgument programArg{
+            true, value, value.getType().cast<RankedTensorType>()};
         auto itBinding = impl->implicitBindings.find(value);
         if (itBinding != impl->implicitBindings.end()) {
           programArg.buffer = itBinding->second;
@@ -730,15 +781,15 @@ TileBuilder::MakeProgram(StringRef name, const ProgramMutations &mutations,
     if (itUpdate != impl->implicitUpdates.end()) {
       userValue = itUpdate->second;
     }
-    ProgramArgument programArg{false, userValue,
-                               finalValue.getType().cast<RankedTensorType>()};
+    compiler::ProgramArgument programArg{
+        false, userValue, finalValue.getType().cast<RankedTensorType>()};
     auto itBinding = impl->implicitBindings.find(finalValue);
     if (itBinding != impl->implicitBindings.end()) {
       programArg.buffer = itBinding->second;
     }
     program->arguments.emplace_back(programArg);
-    program->outputs.emplace_back(finalValue);
   }
+  program->tileIR = mlir::debugString(module);
   // IVLOG(2, "TileBuilder::MakeProgram>\n" << mlir::debugString(module));
   return program;
 }
@@ -756,9 +807,8 @@ std::vector<Value> TileBuilder::ComputeGradients(ArrayRef<Value> wrt,
     auto src = MakeAffineTensorMapOp(loss, src_idxs);
     auto sink = MakeAffineMapOp(ArrayRef<Value>{});
     auto sizes = MakeAffineMapOp(ArrayRef<Value>{});
-    auto cion = MakeContractionOp(util::AggregationKind::add,
-                                  util::CombinationKind::none, {src}, sink,
-                                  sizes, "net_loss");
+    auto cion = MakeContractionOp(AggregationKind::add, CombinationKind::none,
+                                  {src}, sink, sizes, "net_loss");
     value = cion;
   }
   Gradient grad(value, this);

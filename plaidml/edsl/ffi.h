@@ -38,7 +38,7 @@ void plaidml_edsl_init(  //
 plaidml_logical_shape* plaidml_logical_shape_alloc(  //
     plaidml_error* err,                              //
     plaidml_datatype dtype,                          //
-    size_t ndims,                                    //
+    size_t rank,                                     //
     const int64_t* dims);
 
 void plaidml_logical_shape_free(  //
@@ -57,18 +57,17 @@ plaidml_string* plaidml_logical_shape_repr(  //
     plaidml_error* err,                      //
     plaidml_logical_shape* shape);
 
-size_t plaidml_logical_shape_get_ndims(  //
-    plaidml_error* err,                  //
+size_t plaidml_logical_shape_get_rank(  //
+    plaidml_error* err,                 //
     plaidml_logical_shape* shape);
 
 plaidml_datatype plaidml_logical_shape_get_dtype(  //
     plaidml_error* err,                            //
     plaidml_logical_shape* shape);
 
-int64_t plaidml_logical_shape_get_dim_int(  //
-    plaidml_error* err,                     //
-    plaidml_logical_shape* shape,           //
-    size_t dim);
+plaidml_integers* plaidml_logical_shape_get_sizes(  //
+    plaidml_error* err,                             //
+    plaidml_logical_shape* shape);
 
 //
 // plaidml_poly_expr
@@ -187,7 +186,7 @@ void plaidml_expr_bind_shape(  //
 void plaidml_expr_bind_dims(  //
     plaidml_error* err,       //
     plaidml_expr* expr,       //
-    size_t ndims,             //
+    size_t rank,              //
     plaidml_dim_expr** dims);
 
 plaidml_string* plaidml_expr_repr(  //
@@ -217,6 +216,10 @@ void plaidml_expr_param_reset(  //
     plaidml_expr* shape,        //
     plaidml_buffer* buffer);
 
+plaidml_expr* plaidml_expr_uint(  //
+    plaidml_error* err,           //
+    uint64_t value);
+
 plaidml_expr* plaidml_expr_int(  //
     plaidml_error* err,          //
     int64_t value);
@@ -244,12 +247,12 @@ plaidml_expr* plaidml_expr_trace(  //
 plaidml_expr* plaidml_expr_index_map(  //
     plaidml_error* err,                //
     plaidml_expr* ref,                 //
-    size_t ndims,                      //
+    size_t rank,                       //
     plaidml_poly_expr** idxs);
 
 plaidml_expr* plaidml_expr_size_map(  //
     plaidml_error* err,               //
-    size_t ndims,                     //
+    size_t rank,                      //
     plaidml_dim_expr** sizes);
 
 plaidml_expr* plaidml_expr_grad_override(  //
@@ -307,8 +310,8 @@ void plaidml_expr_contraction_set_use_default(  //
 // plaidml_value
 //
 
-typedef struct plaidml_tuple {
-  size_t nelts;
+typedef struct {
+  size_t size;
   plaidml_value** elts;
 } plaidml_tuple;
 
@@ -386,44 +389,60 @@ plaidml_string* plaidml_value_repr(  //
     plaidml_value* value);
 
 //
-// plaidml_program
+// plaidml_targets
 //
 
-typedef struct plaidml_program_arg {
+plaidml_strings* plaidml_targets_get(  //
+    plaidml_error* err);
+
+//
+// plaidml_program_args
+//
+typedef struct {
   bool is_input;
   plaidml_expr* tensor;
   plaidml_logical_shape* shape;
   plaidml_buffer* buffer;
 } plaidml_program_arg;
 
-typedef struct plaidml_program_args {
-  size_t nargs;
-  plaidml_program_arg* args;
+typedef struct {
+  size_t size;
+  plaidml_program_arg* elts;
 } plaidml_program_args;
+
+void plaidml_program_args_free(  //
+    plaidml_error* err,          //
+    plaidml_program_args* args);
+
+//
+// plaidml_program
+//
 
 void plaidml_program_free(  //
     plaidml_error* err,     //
     plaidml_program* program);
 
-plaidml_program* plaidml_program_evaluate(  //
-    plaidml_error* err,                     //
-    const char* name,                       //
-    size_t noutputs,                        //
-    plaidml_expr** outputs,                 //
-    size_t nupdates,                        //
-    plaidml_expr** src_updates,             //
-    plaidml_expr** dst_updates,             //
-    plaidml_datatype floatx,                //
-    plaidml_datatype intx,                  //
+plaidml_program* plaidml_compile(  //
+    plaidml_error* err,            //
+    const char* name,              //
+    const char* target,            //
+    size_t noutputs,               //
+    plaidml_expr** outputs,        //
+    size_t nupdates,               //
+    plaidml_expr** src_updates,    //
+    plaidml_expr** dst_updates,    //
+    plaidml_datatype floatx,       //
+    plaidml_datatype intx,         //
+    bool debug,                    //
     plaidml_program_args** args);
 
 plaidml_string* plaidml_program_repr(  //
     plaidml_error* err,                //
     plaidml_program* program);
 
-void plaidml_program_args_free(  //
-    plaidml_error* err,          //
-    plaidml_program_args* args);
+plaidml_kvps* plaidml_program_get_passes(  //
+    plaidml_error* err,                    //
+    plaidml_program* program);
 
 #ifdef __cplusplus
 }  // extern "C"

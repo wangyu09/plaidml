@@ -44,6 +44,7 @@ using mlir::AffineIfOp;
 using mlir::AffineLoadOp;
 using mlir::AffineMap;
 using mlir::AffineMapAttr;
+using mlir::AffineParallelOp;
 using mlir::AffineStoreOp;
 using mlir::AllocOp;
 using mlir::ArrayRef;
@@ -456,6 +457,43 @@ struct CondOp {
   }
 };
 
+static Value buildBroadcastLoad(OpBuilder &builder, Location loc, Value operand,
+                                unsigned outRank) {
+  auto body = builder.getBlock();
+  auto defOp = operand.getDefiningOp();
+  Attribute attr;
+  // Handle scalar values
+  if (defOp && mlir::m_Constant(&attr).match(defOp)) {
+    return operand;
+  }
+  // handle broadcasts
+  auto operandType = operand.getType().cast<MemRefType>();
+  assert(operandType.getRank() <= outRank && "result rank < operand rank");
+  auto op_shape = operandType.getShape();
+  SmallVector<Value, 8> operandIdxs(operandType.getRank());
+  for (unsigned i = 0; i < operandType.getRank(); i++) {
+    unsigned j = outRank - i - 1;
+    unsigned k = operandType.getRank() - i - 1;
+    if (op_shape[k] == 1) {
+      operandIdxs[k] = builder.create<mlir::ConstantIndexOp>(loc, 0);
+    } else {
+      operandIdxs[k] = body->getArgument(j);
+    }
+  }
+  return builder.create<AffineLoadOp>(loc, operand, operandIdxs);
+}
+
+static void buildSimpleStore(OpBuilder &builder, Location loc, Value scalar,
+                             Value memRef) {
+  auto body = builder.getBlock();
+  // TODO: Maybe fix ValueRange to support arguments?
+  SmallVector<Value, 8> idxs;
+  for (size_t i = 0; i < body->getNumArguments(); i++) {
+    idxs.push_back(body->getArgument(i));
+  }
+  builder.create<AffineStoreOp>(loc, scalar, memRef, idxs);
+}
+
 template <typename FromOpType, typename IntoOpBuilder,
           typename Matcher = AlwaysTrue>
 struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
@@ -487,45 +525,17 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
         rewriter.create<AllocOp>(loc, resultMemRefType).getResult();
 
     // Make a parallel for loop to fill the result
-    IVLOG(1, "Creating AffineParallelOp");
-    auto forOp = rewriter.create<pxa::AffineParallelOp>(
-        loc, resultMemRefType.getShape());
+    auto forOp =
+        rewriter.create<AffineParallelOp>(loc, resultMemRefType.getShape());
     auto body = forOp.getBody();
     IVLOG(1, "body->getNumArguments() " << body->getNumArguments());
     rewriter.setInsertionPointToStart(body);
-    // TODO: Maybe fix ValueRange?
-    SmallVector<Value, 8> idxs;
-    for (size_t i = 0; i < body->getNumArguments(); i++) {
-      idxs.push_back(body->getArgument(i));
-    }
+
     // Create the loads
     SmallVector<Value, 4> scalars;
     for (size_t i = 0; i < operands.size(); i++) {
-      auto operand = operands[i];
-      auto defOp = operand.getDefiningOp();
-      Attribute attr;
-      if (defOp && mlir::m_Constant(&attr).match(defOp)) {
-        scalars.push_back(operand);
-      } else {
-        // handle broadcasts
-        auto operandType = operand.getType().cast<MemRefType>();
-        assert(operandType.getRank() <= resultMemRefType.getRank() &&
-               "result rank < operand rank");
-        auto op_shape = operandType.getShape();
-        SmallVector<Value, 8> operandIdxs(operandType.getRank());
-        for (unsigned i = 0; i < operandType.getRank(); i++) {
-          unsigned j = resultMemRefType.getRank() - i - 1;
-          unsigned k = operandType.getRank() - i - 1;
-          if (op_shape[k] == 1) {
-            operandIdxs[k] = rewriter.create<AffineConstantOp>(loc, 0);
-          } else {
-            operandIdxs[k] = body->getArgument(j);
-          }
-        }
-        IVLOG(1, "Creating AffineLoadOp with operand " << operand);
-        scalars.push_back(
-            rewriter.create<AffineLoadOp>(loc, operand, operandIdxs));
-      }
+      scalars.push_back(buildBroadcastLoad(rewriter, loc, operands[i],
+                                           resultMemRefType.getRank()));
     }
 
     // Create the standard op
@@ -540,8 +550,7 @@ struct EltwiseOpConversion : public OpConversionPattern<FromOpType> {
                                        operandDataTypes);
 
     // Create the store
-    IVLOG(1, "Creating AffineStoreOp");
-    rewriter.create<AffineStoreOp>(loc, result, resultMemRef, idxs);
+    buildSimpleStore(rewriter, loc, result, resultMemRef);
 
     // Replace output with the newly allocated buffer
     rewriter.replaceOp(op, resultMemRef);
@@ -559,8 +568,8 @@ struct ContractionOpConversion : public OpConversionPattern<ContractionOp> {
       if (cionOp.combo() != comboKind) {
         return matchFailure();
       }
-      if (!cionOp.lower_bounds().hasValue() ||
-          !cionOp.upper_bounds().hasValue()) {
+      if (!cionOp.lowerBounds().hasValue() ||
+          !cionOp.upperBounds().hasValue()) {
         cionOp.emitError("contraction bounds must be computed");
         return matchFailure();
       }
@@ -596,8 +605,8 @@ struct ContractionOpConversion : public OpConversionPattern<ContractionOp> {
 
     // Determine ranges
     SmallVector<int64_t, 8> ranges;
-    auto lowerBounds = op.lower_bounds().getValue();
-    auto upperBounds = op.upper_bounds().getValue();
+    auto lowerBounds = op.lowerBounds().getValue();
+    auto upperBounds = op.upperBounds().getValue();
     assert(lowerBounds.getNumResults() == upperBounds.getNumResults() &&
            "mismatched dims for lower and upper bounds");
     for (unsigned i = 0; i < lowerBounds.getNumResults(); i++) {
@@ -606,10 +615,16 @@ struct ContractionOpConversion : public OpConversionPattern<ContractionOp> {
       ranges.emplace_back(range);
     }
 
-    // TODO: addInitializer
+    // Do initialization
+    auto initFor =
+        rewriter.create<AffineParallelOp>(loc, resultType.getShape());
+    auto initForBuilder = initFor.getBodyBuilder();
+    auto initLoad = buildBroadcastLoad(initForBuilder, loc, cionAdaptor.init(),
+                                       resultType.getRank());
+    buildSimpleStore(initForBuilder, loc, initLoad, resultMemRef);
 
     // Make the outer loops
-    auto forOp = rewriter.create<pxa::AffineParallelOp>(loc, ranges);
+    auto forOp = rewriter.create<AffineParallelOp>(loc, ranges);
     auto body = forOp.getBody();
     rewriter.setInsertionPointToStart(body);
     // TODO: Maybe fix ValueRange?
@@ -686,8 +701,7 @@ struct IndexOpConversion : public OpConversionPattern<IndexOp> {
     auto resultMemRef = rewriter.create<AllocOp>(loc, resultType).getResult();
 
     // Make a parallel for loop to fill the result
-    auto forOp =
-        rewriter.create<pxa::AffineParallelOp>(loc, resultType.getShape());
+    auto forOp = rewriter.create<AffineParallelOp>(loc, resultType.getShape());
     auto body = forOp.getBody();
     rewriter.setInsertionPointToStart(body);
     // TODO: Maybe fix ValueRange?
@@ -776,8 +790,7 @@ struct CastOpConversion : public OpConversionPattern<ew::CastOp> {
     auto resultMemRef = rewriter.create<AllocOp>(loc, resultType).getResult();
 
     // Make a parallel for loop to fill the result
-    auto forOp =
-        rewriter.create<pxa::AffineParallelOp>(loc, resultType.getShape());
+    auto forOp = rewriter.create<AffineParallelOp>(loc, resultType.getShape());
     auto body = forOp.getBody();
     rewriter.setInsertionPointToStart(body);
     // TODO: Maybe fix ValueRange?
@@ -832,7 +845,7 @@ struct TraceOpConversion : public OpConversionPattern<TraceOp> {
     auto module = op.getParentOfType<ModuleOp>();
     auto symbol = createStubFunc(module, op.msgAttr());
     rewriter.create<CallOp>(op.getLoc(), symbol, ArrayRef<Type>{});
-    rewriter.replaceOp(op, op.tensor());
+    rewriter.replaceOp(op, op.in());
     return matchSuccess();
   }
 
@@ -927,6 +940,7 @@ struct LoweringPass : public mlir::ModulePass<LoweringPass> {
                             ResultIs<EltwiseSigned>>,
         EltwiseOpConversion<ew::DivOp, StdOp<mlir::UnsignedDivIOp>,
                             ResultIs<EltwiseUnsigned>>,
+        EltwiseOpConversion<ew::SqrtOp, StdOp<mlir::SqrtOp>>,
         EltwiseOpConversion<ew::ModOp, StdOp<mlir::RemFOp>,
                             ResultIs<EltwiseFloat>>,
         EltwiseOpConversion<ew::ModOp, StdOp<mlir::SignedRemIOp>,
