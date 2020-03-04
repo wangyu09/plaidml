@@ -8,11 +8,13 @@ plaidml_cc_library(
     name = "lib",
     srcs = [
         "autotile.cc",
+        "fuse.cc",
         "tile.cc",
 	"test_analysis.cc"
     ],
     hdrs = [
         "autotile.h",
+        "fuse.h",
         "tile.h",
 	"test_analysis.h"
     ],

@@ -1,6 +1,7 @@
 // Copyright 2020 Intel Corporation
 
 #include "pmlc/dialect/pxa/transforms/autotile.h"
+#include "pmlc/dialect/pxa/transforms/fuse.h"
 #include "pmlc/dialect/pxa/transforms/test_analysis.h"
 
 namespace pmlc::dialect::pxa {
@@ -29,5 +30,7 @@ static mlir::PassRegistration<Autotile10Pass>
 static mlir::PassRegistration<TestStrideInfoPass>
     regTestStrideInfo("test-stride-info",
                       "Report stride data for all loads/stores for unit tests");
+
+static mlir::PassRegistration<FusePass> regFus("fuse", "Do fusion");
 
 } // namespace pmlc::dialect::pxa
