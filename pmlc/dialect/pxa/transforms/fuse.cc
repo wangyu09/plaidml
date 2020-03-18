@@ -14,12 +14,19 @@ namespace pmlc::dialect::pxa {
 using namespace mlir; // NOLINT
 
 bool attemptFusion(AffineParallelOp op1, AffineParallelOp op2) {
-  IVLOG(1, "W00t!");
-  auto op1Write = getWriteBuffers(op1);
-  auto op2Read = getReadBuffers(op2);
-  for (auto buf : op1Write) {
-    if (!op2Read.count(buf))
+  auto op1Writes = getBufferWrites(op1);
+  auto op2Reads = getBufferReads(op2);
+  for (auto &kvp : op1Writes) {
+    if (kvp.second.size() != 1)
       continue;
+    auto kvp2 = op2Reads.find(kvp.first);
+    if (kvp2 == op2Reads.end()) {
+      continue;
+    }
+    if (kvp2->second.size() != 1) {
+      continue;
+    }
+
     IVLOG(1, "Found a shared buf");
   }
   return false;

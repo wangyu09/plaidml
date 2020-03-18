@@ -2,7 +2,7 @@
 
 #include "pmlc/dialect/pxa/analysis/read_write.h"
 #include "mlir/ADT/TypeSwitch.h"
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "pmlc/util/logging.h"
 
 using pmlc::dialect::pxa::AffineReduceOp;
@@ -23,28 +23,30 @@ Value getBufferSource(Value buf) {
   return buf;
 }
 
-DenseSet<Value> getReadBuffers(Operation *base) {
-  DenseSet<Value> r;
-  base->walk([&](Operation *op) {
-    TypeSwitch<Operation *>(op)
-        .Case<AffineLoadOp>(
-            [&](auto op) { r.insert(getBufferSource(op.getMemRef())); })
+DenseMap<Value, SmallVector<Operation *, 2>> getBufferReads(Operation *base) {
+  DenseMap<Value, SmallVector<Operation *, 2>> ret;
+  base->walk([&](Operation *baseOp) {
+    TypeSwitch<Operation *>(baseOp)
+        .Case<AffineLoadOp>([&](auto op) {
+          ret[getBufferSource(op.getMemRef())].push_back(op);
+        })
         .Case<AffineReduceOp>(
-            [&](auto op) { r.insert(getBufferSource(op.out())); });
+            [&](auto op) { ret[getBufferSource(op.out())].push_back(op); });
   });
-  return r;
+  return ret;
 }
 
-DenseSet<Value> getWriteBuffers(Operation *base) {
-  DenseSet<Value> r;
-  base->walk([&](Operation *op) {
-    TypeSwitch<Operation *>(op)
-        .Case<AffineStoreOp>(
-            [&](auto op) { r.insert(getBufferSource(op.getMemRef())); })
+DenseMap<Value, SmallVector<Operation *, 2>> getBufferWrites(Operation *base) {
+  DenseMap<Value, SmallVector<Operation *, 2>> ret;
+  base->walk([&](Operation *baseOp) {
+    TypeSwitch<Operation *>(baseOp)
+        .Case<AffineStoreOp>([&](auto op) {
+          ret[getBufferSource(op.getMemRef())].push_back(op);
+        })
         .Case<AffineReduceOp>(
-            [&](auto op) { r.insert(getBufferSource(op.out())); });
+            [&](auto op) { ret[getBufferSource(op.out())].push_back(op); });
   });
-  return r;
+  return ret;
 }
 
 } // namespace mlir

@@ -13,7 +13,7 @@ namespace mlir {
 // subviews, etc, until we hit the source of memref
 Value getBufferSource(Value buf);
 
-DenseSet<Value> getReadBuffers(Operation *op);
-DenseSet<Value> getWriteBuffers(Operation *op);
+DenseMap<Value, SmallVector<Operation *, 2>> getBufferReads(Operation *op);
+DenseMap<Value, SmallVector<Operation *, 2>> getBufferWrites(Operation *op);
 
 } // namespace mlir
