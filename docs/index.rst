@@ -3,14 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to plaidml's documentation!
+PlaidML
 ===================================
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+
 
    usage/install
    usage/building
-   manual_api/index
-
+   usage/contributing
+   usage/troubleshooting
+   usage/edsl
+   api/index
+   usage/configuration

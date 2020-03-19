@@ -2,10 +2,8 @@ channels:
   - conda-forge
   - pytorch
 dependencies:
-  - bison
   - cffi
   - doxygen
-  - flex
   - jupyter
   - nbformat=4.4.0 # Latest version of nbformat breaks the analysis notebook
   - pip=19
@@ -18,6 +16,7 @@ dependencies:
     - breathe
     - click
     - defaultlist
+    - drawSvg
     - graphviz
     - humanize
     - keras==2.2.4
@@ -30,12 +29,12 @@ dependencies:
     - pygments
     - pystache
     - pyyaml
-    - requests
     - sphinxcontrib.katex
     - sphinxcontrib-napoleon
     - sphinx_rtd_theme
     - sphinx-tabs
     - tensorflow==1.15
     - theano
+    - voila
     - https://download.pytorch.org/whl/nightly/cpu/torch_nightly-1.2.0.dev20190618-cp37-none-macosx_10_7_x86_64.whl; platform_system == 'Darwin'
     - https://download.pytorch.org/whl/nightly/cpu/torch_nightly-1.2.0.dev20190614-cp37-cp37m-linux_x86_64.whl; platform_system == 'Linux'

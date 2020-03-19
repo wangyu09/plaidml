@@ -1,4 +1,4 @@
-# Copyright 2019 Intel Corporation.
+# Copyright 2020 Intel Corporation
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,13 +9,15 @@ plaidml_cc_library(
     srcs = glob(["*.cc"]),
     hdrs = glob(["*.h"]),
     deps = [
-        "//base/util",
-        "//pmlc/conversion/tile_to_pxa",
+        "//pmlc/util",
         "@llvm-project//llvm:support",
         "@llvm-project//mlir:AffineToStandardTransforms",
         "@llvm-project//mlir:ExecutionEngine",
         "@llvm-project//mlir:ExecutionEngineUtils",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:LLVMTransforms",
+        "@llvm-project//mlir:LoopsToGPUPass",
+        "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:OpenMPDialect",
     ],
 )

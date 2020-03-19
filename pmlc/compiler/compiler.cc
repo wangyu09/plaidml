@@ -1,173 +1,114 @@
-// Copyright 2019, Intel Corporation
+// Copyright 2020 Intel Corporation
 
 #include "pmlc/compiler/compiler.h"
 
-#include <unordered_map>
 #include <utility>
 
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/TargetSelect.h"
 
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
+#include "mlir/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "mlir/Target/LLVMIR.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "base/util/logging.h"
 #include "pmlc/compiler/registry.h"
-#include "pmlc/conversion/tile_to_pxa/tile_to_pxa.h"
+#include "pmlc/util/all_dialects.h"
+#include "pmlc/util/all_passes.h"
+#include "pmlc/util/logging.h"
 
-using namespace mlir;  // NOLINT[build/namespaces]
-using pmlc::conversion::tile_to_pxa::createLowerTileToPXAPass;
+using namespace mlir; // NOLINT[build/namespaces]
 
 namespace pmlc::compiler {
 
 namespace {
 
-template <typename T, int N>
-struct StridedMemRefType {
-  T* basePtr;
-  T* data;
-  int64_t offset;
-  int64_t sizes[N];
-  int64_t strides[N];
+class IRCollector : public PassInstrumentation {
+public:
+  explicit IRCollector(std::vector<PassInfo> *into) : into(into) {}
+
+private:
+  bool isHiddenPass(Pass *pass) {
+    return pass->getName().startswith("detail::");
+  }
+
+  void runAfterPass(Pass *pass, Operation *op) override {
+    if (isHiddenPass(pass))
+      return;
+
+    std::string ir;
+    llvm::raw_string_ostream os(ir);
+
+    // Find the top-level module operation.
+    auto *topLevelOp = op;
+    while (auto *parentOp = topLevelOp->getParentOp()) {
+      topLevelOp = parentOp;
+    }
+
+    // Check to see if the top-level operation is actually a module in the case
+    // of invalid-ir.
+    if (auto module = dyn_cast<ModuleOp>(topLevelOp)) {
+      module.print(os);
+    } else {
+      topLevelOp->print(os);
+    }
+
+    os.flush();
+
+    auto name = pass->getName().str();
+    if (auto passInfo = pass->lookupPassInfo()) {
+      auto passArg = passInfo->getPassArgument();
+      if (!passArg.empty()) {
+        name = passArg.str();
+      }
+    }
+    into->emplace_back(PassInfo{name, ir});
+  }
+
+  std::vector<PassInfo> *into;
 };
 
-template <typename StreamType, typename T, int N>
-void printMemRefMetaData(StreamType& os, StridedMemRefType<T, N>* memref) {  // NOLINT[runtime/references]
-  static_assert(N > 0, "Expected N > 0");
-  os << "Memref ptr: " << reinterpret_cast<void*>(memref);
-  os << " base: " << reinterpret_cast<void*>(memref->data);
-  os << " rank: " << N;
-  os << " offset: " << memref->offset;
-  os << " sizes: [";
-  for (unsigned i = 0; i < N; ++i) {
-    if (i) {
-      os << ", ";
-    }
-    os << memref->sizes[i];
-  }
-  os << "] strides: [";
-  for (unsigned i = 0; i < N; ++i) {
-    if (i) {
-      os << ", ";
-    }
-    os << memref->strides[i];
-  }
-  os << "]";
-}
-
-template <typename T, int N>
-void printMemRef(StridedMemRefType<T, N>* memref) {
-  static_assert(N > 0, "Expected N > 0");
-  printMemRefMetaData(std::cout, memref);
-  std::cout << std::endl;
-}
-
-class InjectTracingPass : public FunctionPass<InjectTracingPass> {
- public:
-  void runOnFunction() override {
-    auto funcOp = getFunction();
-    auto moduleOp = funcOp.getParentOfType<ModuleOp>();
-
-    OpBuilder builder(funcOp.getBody());
-    for (auto arg : funcOp.getArguments()) {
-      auto memRefType = arg->getType().cast<MemRefType>();
-      SmallVector<int64_t, 2> shape(memRefType.getRank(), MemRefType::kDynamicSize);
-      auto genericType = MemRefType::get(shape, memRefType.getElementType());
-      auto printRef = getOrInsertPrint(moduleOp, genericType);
-      auto castOp = builder.create<MemRefCastOp>(builder.getUnknownLoc(), genericType, arg);
-      builder.create<CallOp>(builder.getUnknownLoc(), printRef, ArrayRef<Type>{}, castOp.getResult());
-    }
-  }
-
-  static FlatSymbolRefAttr getOrInsertPrint(ModuleOp module, MemRefType memRefType) {
-    auto* context = module.getContext();
-    // TODO: select symbol name based on memRefType
-    const char* symbol = "print_memref_2d_f32";
-    if (module.lookupSymbol<FuncOp>(symbol)) {
-      return SymbolRefAttr::get(symbol, context);
-    }
-    OpBuilder builder(context);
-    builder.setInsertionPointToStart(module.getBody());
-    auto funcType = FunctionType::get(memRefType, {}, context);
-    builder.create<FuncOp>(module.getLoc(), symbol, funcType, ArrayRef<NamedAttribute>{});
-    return SymbolRefAttr::get(symbol, context);
-  }
-
-  static std::unique_ptr<Pass> create() { return std::make_unique<InjectTracingPass>(); }
-};
-
-using MemRefTypes = std::vector<MemRefType>;
-
-class ArgumentCollectorPass : public FunctionPass<ArgumentCollectorPass> {
- public:
-  explicit ArgumentCollectorPass(MemRefTypes* into) : into(into) {}
-
-  void runOnFunction() override {
-    auto funcOp = getFunction();
-    for (auto arg : funcOp.getArguments()) {
-      into->emplace_back(arg->getType().cast<MemRefType>());
-    }
-  }
-
-  static std::unique_ptr<Pass> create(MemRefTypes* into) { return std::make_unique<ArgumentCollectorPass>(into); }
-
- private:
-  MemRefTypes* into;
-};
-
-}  // namespace
-
-extern "C" void print_memref_2d_f32(StridedMemRefType<float, 2>* M) {  //
-  printMemRef(M);
-}
+} // namespace
 
 class MemRefDescriptor {
- private:
+private:
   struct Base {
-    void* basePtr;
-    void* data;
+    void *basePtr;
+    void *data;
     int64_t offset;
   };
 
- public:
-  MemRefDescriptor(void* data, MemRefType type) : memory(computeSize(type)) {
-    int64_t offset;
-    SmallVector<int64_t, 4> strides;
-    auto maybeStrides = getStridesAndOffset(type, strides, offset);
-    if (failed(maybeStrides)) {
-      throw std::runtime_error("unexpected non-strided memref");
-    }
-    auto base = reinterpret_cast<Base*>(memory.data());
+public:
+  MemRefDescriptor(void *data, RankedTensorType type)
+      : memory(computeSize(type)) {
+    auto base = reinterpret_cast<Base *>(memory.data());
     base->basePtr = data;
     base->data = data;
-    base->offset = offset;
-    auto var = reinterpret_cast<int64_t*>(memory.data() + sizeof(Base));
-    auto rank = type.getRank();
-    auto sizes = type.getShape();
-    for (unsigned i = 0; i < rank; i++) {
-      var[i] = sizes[i];
-      var[i + rank] = strides[i];
-    }
   }
 
-  void* ptr() { return memory.data(); }
+  void *ptr() { return memory.data(); }
 
- private:
-  static unsigned computeSize(MemRefType type) {
-    return sizeof(void*) +                     // allocatedPtr
-           sizeof(void*) +                     // alignedPtr
-           sizeof(int64_t) +                   // offset
-           sizeof(int64_t) * type.getRank() +  // sizes
-           sizeof(int64_t) * type.getRank();   // strides
+private:
+  static unsigned computeSize(RankedTensorType type) {
+    return sizeof(void *) +                   // allocatedPtr
+           sizeof(void *) +                   // alignedPtr
+           sizeof(int64_t) +                  // offset
+           sizeof(int64_t) * type.getRank() + // sizes
+           sizeof(int64_t) * type.getRank();  // strides
   }
 
   std::vector<char> memory;
 };
+
+void Program::initialize() {
+  registerAllDialects();
+  registerAllPasses();
+}
 
 void Executable::initialize() {
   llvm::InitializeNativeTarget();
@@ -175,72 +116,104 @@ void Executable::initialize() {
   initializeLLVMPasses();
 }
 
-Executable::Executable(StringRef entry, StringRef target, ModuleOp programModule, ArrayRef<void*> bufptrs)
-    : entry(entry), args(bufptrs.size()), ptrs(bufptrs.size()) {
-  auto copy = cast<ModuleOp>(programModule.getOperation()->clone());
-  OwningModuleRef module(copy);
-  PassManager manager(module->getContext());
+Program::Program(mlir::ModuleOp module) : module(module) {}
 
-  auto shouldPrintBeforePass = [](auto, auto) { return false; };
-  auto shouldPrintAfterPass = [](auto, auto) { return VLOG_IS_ON(3); };
-  manager.enableIRPrinting(shouldPrintBeforePass, shouldPrintAfterPass, true, false, llvm::errs());
+Program::Program(mlir::StringRef source) {
+  auto inputBuffer = llvm::MemoryBuffer::getMemBuffer(source);
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(inputBuffer), llvm::SMLoc());
+  module = mlir::parseSourceFile(sourceMgr, &context);
+}
 
-  manager.addNestedPass<FuncOp>(createCanonicalizerPass());
-  manager.addNestedPass<FuncOp>(createCSEPass());
+void Program::compile(StringRef target, bool collectPasses) {
+  if (target.empty()) {
+    return;
+  }
 
-  manager.addPass(createLowerTileToPXAPass());
-  manager.addNestedPass<FuncOp>(createCanonicalizerPass());
-  manager.addNestedPass<FuncOp>(createCSEPass());
+  PassManager pm(module->getContext());
 
-  std::vector<MemRefType> memRefTypes;
-  manager.addPass(ArgumentCollectorPass::create(&memRefTypes));
-  if (VLOG_IS_ON(6)) {
-    manager.addPass(InjectTracingPass::create());
+  if (collectPasses) {
+    std::string ir;
+    llvm::raw_string_ostream os(ir);
+    module->print(os);
+    os.flush();
+    passes.emplace_back(PassInfo{"tile", ir});
+    pm.addInstrumentation(std::make_unique<IRCollector>(&passes));
+  }
+
+  if (VLOG_IS_ON(1)) {
+    pm.enableStatistics();
+    pm.enableTiming();
+    auto shouldPrintBeforePass = [](auto pass, auto op) { return false; };
+    auto shouldPrintAfterPass = [&](auto pass, auto op) {
+      return VLOG_IS_ON(3);
+    };
+    pm.disableMultithreading();
+    pm.enableIRPrinting(shouldPrintBeforePass, shouldPrintAfterPass, true,
+                        false, llvm::errs());
   }
 
   auto pipelineBuilder = resolveTarget(target);
-  pipelineBuilder(&manager);
+  pipelineBuilder(pm);
 
-  if (failed(manager.run(*module))) {
+  if (failed(pm.run(*module))) {
     throw std::runtime_error("conversion to the LLVM IR dialect failed");
   }
+}
 
-  assert(memRefTypes.size() == bufptrs.size() && "memRefTypes and bufptrs size mismatch");
+Executable::Executable(const std::shared_ptr<Program> &program,
+                       ArrayRef<void *> bufptrs)
+    : program(program), ptrs(bufptrs.size()) {
+  if (program->arguments.size() != bufptrs.size()) {
+    throw std::runtime_error("Program arguments and bufptrs size mismatch");
+  }
+
+  auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
+  if (!tmBuilderOrError) {
+    throw std::runtime_error(
+        "Failed to create a JITTargetMachineBuilder for the host");
+  }
+
+  auto tmOrError = tmBuilderOrError->createTargetMachine();
+  if (!tmOrError) {
+    throw std::runtime_error("Failed to create a TargetMachine for the host");
+  }
 
   auto optPipeline = makeOptimizingTransformer(
       /*optLevel=*/0, /*sizeLevel=*/0,
-      /*targetMachine=*/nullptr);
+      /*targetMachine=*/tmOrError->get());
 
   if (VLOG_IS_ON(6)) {
-    auto llvmModule = translateModuleToLLVMIR(*module);
+    auto llvmModule = translateModuleToLLVMIR(*program->module);
     if (!llvmModule) {
       throw std::runtime_error("could not convert to LLVM IR");
     }
     llvmModule->print(llvm::errs(), nullptr);
   }
 
-  auto maybeEngine = ExecutionEngine::create(*module, optPipeline);
-  llvm::handleAllErrors(maybeEngine.takeError(), [](const llvm::ErrorInfoBase& b) {
-    b.log(llvm::errs());
-    throw std::runtime_error("Failed to create ExecutionEngine");
-  });
+  auto maybeEngine = ExecutionEngine::create(*program->module, optPipeline);
+  llvm::handleAllErrors(
+      maybeEngine.takeError(), [](const llvm::ErrorInfoBase &err) {
+        throw std::runtime_error("Failed to create ExecutionEngine: " +
+                                 err.message());
+      });
   engine = std::move(*maybeEngine);
 
-  descriptors.reserve(args.size());
-  for (unsigned i = 0; i < args.size(); i++) {
-    descriptors.emplace_back(bufptrs[i], memRefTypes[i]);
+  descriptors.reserve(bufptrs.size());
+  for (unsigned i = 0; i < bufptrs.size(); i++) {
+    descriptors.emplace_back(bufptrs[i], program->arguments[i].shape);
     ptrs[i] = descriptors[i].ptr();
-    args[i] = &ptrs[i];
   }
 }
 
 Executable::~Executable() = default;
 
 void Executable::invoke() {
-  auto result = engine->invoke(entry, llvm::MutableArrayRef<void*>(args));
+  auto arrayRef = MutableArrayRef<void *>(ptrs);
+  auto result = engine->invoke(program->entry, arrayRef);
   if (result) {
     throw std::runtime_error("JIT invocation failed");
   }
 }
 
-}  // namespace pmlc::compiler
+} // namespace pmlc::compiler

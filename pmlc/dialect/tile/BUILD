@@ -13,17 +13,16 @@ plaidml_cc_library(
     ],
     hdrs = [
         "builder.h",
-        "program.h",
     ],
     deps = [
-        "//base/util",
+        "//pmlc/compiler",
         "//pmlc/dialect/eltwise",
-        "//pmlc/dialect/stripe",  # TODO: remove this dep
         "//pmlc/dialect/tile/ir",
         "//pmlc/dialect/tile/transforms",
         "//pmlc/util",
-        "//tile/base",
         "@llvm-project//llvm:support",
+        "@llvm-project//mlir:Analysis",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Transforms",
     ],
 )

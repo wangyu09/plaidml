@@ -1,35 +1,39 @@
-# Copyright 2018 Intel Corporation.
+# Copyright 2020 Intel Corporation
 
-load("//bzl:plaidml.bzl", "plaidml_cc_binary")
+load("//bzl:plaidml.bzl", "plaidml_cc_binary", "plaidml_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
-plaidml_cc_binary(
-    name = "resnet50_ast",
+plaidml_cc_library(
+    name = "oplib",
     srcs = ["resnet50.cc"],
+    hdrs = ["oplib.h"],
     deps = [
-        "//base/util",
-        "//plaidml2/edsl:api",
-        "//plaidml2/edsl:edsl_ast",
-        "//plaidml2/exec:api",
-        "//plaidml2/exec:exec_ast",
-        "//plaidml2/op:api",
-        "//plaidml2/op:op_ast",
-        "@com_github_google_benchmark//:benchmark_main",
+        "//plaidml",
+        "//pmlc/util",
+        "@llvm-project//llvm:support",
     ],
 )
 
 plaidml_cc_binary(
-    name = "resnet50_mlir",
-    srcs = ["resnet50.cc"],
+    name = "benchmark",
+    srcs = ["benchmark.cc"],
     deps = [
-        "//base/util",
-        "//plaidml2/edsl:api",
-        "//plaidml2/edsl:edsl_mlir",
-        "//plaidml2/exec:api",
-        "//plaidml2/exec:exec_mlir",
-        "//plaidml2/op:api",
-        "//plaidml2/op:op_mlir",
-        "@com_github_google_benchmark//:benchmark_main",
+        ":oplib",
+        "//plaidml/exec",
+        "//pmlc/rt:link",
+        "//pmlc/util",
+        "@com_github_google_benchmark//:benchmark",
+    ],
+)
+
+plaidml_cc_binary(
+    name = "run",
+    srcs = ["run.cc"],
+    deps = [
+        ":oplib",
+        "//plaidml/exec",
+        "//pmlc/rt:link",
+        "//pmlc/util",
     ],
 )

@@ -2,16 +2,20 @@
 
 #pragma once
 
+#include "mlir/Analysis/AffineStructures.h"
 #include "mlir/Dialect/AffineOps/AffineOps.h"
-#include "mlir/Transforms/LoopLikeInterface.h"
+#include "mlir/IR/AffineExpr.h"
 
 #include "pmlc/util/enums.h"
 
 namespace pmlc::dialect::pxa {
 
+using llvm::SmallVectorImpl;
+using mlir::AffineExpr;
 using mlir::AffineMap;
 using mlir::AffineMapAttr;
 using mlir::AffineTerminatorOp;
+using mlir::AffineValueMap;
 using mlir::ArrayAttr;
 using mlir::ArrayRef;
 using mlir::Attribute;
@@ -25,6 +29,7 @@ using mlir::Location;
 using mlir::LogicalResult;
 using mlir::LoopLikeOpInterface;
 using mlir::MemRefType;
+using mlir::MLIRContext;
 using mlir::NamedAttribute;
 using mlir::Op;
 using mlir::OpAsmParser;
@@ -51,4 +56,4 @@ namespace OpTrait = mlir::OpTrait;
 #define GET_OP_CLASSES
 #include "pmlc/dialect/pxa/ir/ops.h.inc"
 
-}  // namespace pmlc::dialect::pxa
+} // namespace pmlc::dialect::pxa

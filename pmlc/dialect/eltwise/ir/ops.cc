@@ -7,15 +7,13 @@
 #include <string>
 #include <vector>
 
-#include "llvm/ADT/StringSwitch.h"
-
-#include "mlir/Dialect/StandardOps/Ops.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/DebugStringHelper.h"
 
-#include "base/util/logging.h"
 #include "pmlc/dialect/eltwise/ir/util.h"
+#include "pmlc/util/logging.h"
 #include "pmlc/util/util.h"
 
 #define DEBUG_TYPE "eltwise"
@@ -35,19 +33,19 @@ mlir::OpFoldResult ScalarConstantOp::fold(ArrayRef<Attribute> operands) {
   return getValue();
 }
 
-//
 // ---- CastOp ----
-//
 
 struct CastCanonicalizer : public OpRewritePattern<CastOp> {
   using OpRewritePattern<CastOp>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(CastOp castOp, PatternRewriter& rewriter) const override {
-    IVLOG(5, "CastCanonicalizer::matchAndRewrite> " << mlir::debugString(castOp));
+  PatternMatchResult matchAndRewrite(CastOp castOp,
+                                     PatternRewriter &rewriter) const override {
+    IVLOG(5,
+          "CastCanonicalizer::matchAndRewrite> " << mlir::debugString(castOp));
     auto op = castOp.getOperation();
     auto tensor = castOp.tensor();
-    auto tensorType = getRankedTensorType(tensor->getType());
-    auto existingType = getRankedTensorType(castOp.result()->getType());
+    auto tensorType = getRankedTensorType(tensor.getType());
+    auto existingType = getRankedTensorType(castOp.result().getType());
     auto elementType = existingType.getElementType();
     auto resultType = RankedTensorType::get(tensorType.getShape(), elementType);
     if (resultType == existingType) {
@@ -60,50 +58,38 @@ struct CastCanonicalizer : public OpRewritePattern<CastOp> {
   }
 };
 
-void CastOp::getCanonicalizationPatterns(OwningRewritePatternList& results, MLIRContext* context) {
+void CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results,
+                                         MLIRContext *context) {
   results.insert<CastCanonicalizer>(context);
 }
 
-Type CastOp::getResultType(ValueRange operands) {  //
-  llvm_unreachable("CastOp::getResultType not implemented");
-}
-
-Operation* CastOp::create(OpBuilder* builder, Location loc, Type type, ValueRange operands) {
-  OperationState state(loc, getOperationName());
-  state.addOperands(operands);
-  state.addTypes(type);
-  return builder->createOperation(state);
-}
-
-//
 // ---- EltwiseOp ----
-//
 
 template <typename OpType>
 struct EltwiseCanonicalizer : public OpRewritePattern<OpType> {
   using OpRewritePattern<OpType>::OpRewritePattern;
 
-  PatternMatchResult matchAndRewrite(OpType eltwiseOp, PatternRewriter& rewriter) const override {
-    IVLOG(5, "EltwiseCanonicalizer::matchAndRewrite> " << mlir::debugString(eltwiseOp));
+  PatternMatchResult matchAndRewrite(OpType eltwiseOp,
+                                     PatternRewriter &rewriter) const override {
+    IVLOG(5, "EltwiseCanonicalizer::matchAndRewrite> "
+                 << mlir::debugString(eltwiseOp));
     auto op = eltwiseOp.getOperation();
     auto operands = llvm::to_vector<2>(op->getOperands());
     auto resultType = OpType::getResultType(operands);
-    if (resultType == eltwiseOp.result()->getType()) {
+    if (resultType == eltwiseOp.result().getType()) {
       return Pattern::matchFailure();
     }
-    if (auto type = eltwiseOp.type().template dyn_cast<ScalarType>()) {
-      auto newOp = rewriter.create<OpType>(op->getLoc(), type, operands);
-      rewriter.replaceOp(op, {newOp});
-      util::UpdateFuncOpType(newOp.getOperation());
-      return Pattern::matchSuccess();
-    }
-    return Pattern::matchFailure();
+    auto newOp = rewriter.create<OpType>(op->getLoc(), operands);
+    rewriter.replaceOp(op, {newOp});
+    util::UpdateFuncOpType(newOp.getOperation());
+    return Pattern::matchSuccess();
   }
 };
 
-#define DEFINE_CANONICALIZER(_op_)                                                                  \
-  void _op_::getCanonicalizationPatterns(OwningRewritePatternList& results, MLIRContext* context) { \
-    results.insert<EltwiseCanonicalizer<_op_>>(context);                                            \
+#define DEFINE_CANONICALIZER(_op_)                                             \
+  void _op_::getCanonicalizationPatterns(OwningRewritePatternList &results,    \
+                                         MLIRContext *context) {               \
+    results.insert<EltwiseCanonicalizer<_op_>>(context);                       \
   }
 
 DEFINE_CANONICALIZER(AbsOp);
@@ -116,8 +102,8 @@ DEFINE_CANONICALIZER(BitAndOp);
 DEFINE_CANONICALIZER(BitNotOp);
 DEFINE_CANONICALIZER(BitOrOp);
 DEFINE_CANONICALIZER(BitXorOp);
-DEFINE_CANONICALIZER(BitLeftOp);
-DEFINE_CANONICALIZER(BitRightOp);
+DEFINE_CANONICALIZER(BitShlOp);
+DEFINE_CANONICALIZER(BitShrOp);
 DEFINE_CANONICALIZER(CeilOp);
 DEFINE_CANONICALIZER(CmpEqOp);
 DEFINE_CANONICALIZER(CmpGeOp);
@@ -188,8 +174,10 @@ OpFoldResult MulOp::fold(ArrayRef<Attribute> operands) {
 
 Type SelectOp::getResultType(ValueRange operands) {
   auto inferShapeType = getRankedTensorType(ComputeResultType(operands));
-  auto inferElementType = getRankedTensorType(ComputeResultType(operands.drop_front()));
-  return RankedTensorType::get(inferShapeType.getShape(), inferElementType.getElementType());
+  auto inferElementType =
+      getRankedTensorType(ComputeResultType(operands.drop_front()));
+  return RankedTensorType::get(inferShapeType.getShape(),
+                               inferElementType.getElementType());
 }
 
 OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
@@ -205,4 +193,4 @@ OpFoldResult SubOp::fold(ArrayRef<Attribute> operands) {
 #define GET_OP_CLASSES
 #include "pmlc/dialect/eltwise/ir/ops.cc.inc"
 
-}  // namespace pmlc::dialect::eltwise
+} // namespace pmlc::dialect::eltwise

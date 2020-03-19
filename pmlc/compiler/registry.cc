@@ -3,28 +3,31 @@
 #include "pmlc/compiler/registry.h"
 
 #include <string>
-#include <unordered_map>
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/FormatVariadic.h"
 
 #include "mlir/Support/LLVM.h"
 
-using namespace mlir;  // NOLINT[build/namespaces]
+using namespace llvm; // NOLINT[build/namespaces]
+using namespace mlir; // NOLINT[build/namespaces]
 
 namespace pmlc::compiler {
 
 namespace {
 
 class TargetRegistry {
- public:
-  static TargetRegistry* Instance() {
+public:
+  static TargetRegistry *Instance() {
     static TargetRegistry registry;
     return &registry;
   }
 
-  void registerTarget(StringRef name, const TargetRegistryFunction& function) {  //
+  void registerTarget(StringRef name, const TargetRegistryFunction &function) {
     if (registry.count(name)) {
-      throw std::runtime_error(formatv("Target is already registered: {0}", name));
+      throw std::runtime_error(
+          formatv("Target is already registered: {0}", name));
     }
     registry[name] = function;
   }
@@ -38,30 +41,26 @@ class TargetRegistry {
   }
 
   std::vector<StringRef> list() {
-    std::vector<StringRef> ret;
-    ret.reserve(registry.size());
-    for (const auto& [key, _] : registry) {
-      ret.emplace_back(key);
-    }
-    return ret;
+    auto keys = registry.keys();
+    return std::vector<StringRef>(keys.begin(), keys.end());
   }
 
- private:
-  std::unordered_map<std::string, TargetRegistryFunction> registry;
+private:
+  StringMap<TargetRegistryFunction> registry;
 };
 
-}  // namespace
+} // namespace
 
-void registerTarget(mlir::StringRef name, const TargetRegistryFunction& function) {
+void registerTarget(StringRef name, const TargetRegistryFunction &function) {
   TargetRegistry::Instance()->registerTarget(name, function);
 }
 
-TargetRegistryFunction resolveTarget(mlir::StringRef name) {  //
+TargetRegistryFunction resolveTarget(StringRef name) {
   return TargetRegistry::Instance()->resolve(name);
 }
 
-std::vector<mlir::StringRef> listTargets() {  //
+std::vector<StringRef> listTargets() {
   return TargetRegistry::Instance()->list();
 }
 
-}  // namespace pmlc::compiler
+} // namespace pmlc::compiler

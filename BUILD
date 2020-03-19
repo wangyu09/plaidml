@@ -11,14 +11,33 @@ exports_files([
     "LICENSE",
 ])
 
+config_setting(
+    name = "clang",
+    values = {
+        "define": "compiler=clang",
+    },
+)
+
+config_setting(
+    name = "gcc",
+    values = {
+        "define": "compiler=gcc",
+    },
+)
+
+config_setting(
+    name = "msvc",
+    values = {
+        "define": "compiler=msvc",
+    },
+)
+
 pkg_tar(
     name = "pkg",
     srcs = [
         "//plaidbench:wheel",
         "//plaidml:wheel",
-        "//plaidml/keras:wheel",
-        "//plaidml2:wheel",
-        "//plaidml2/bridge/keras:wheel",
+        "//plaidml/bridge/keras:wheel",
     ],
     extension = "tar.gz",
 )
@@ -26,7 +45,7 @@ pkg_tar(
 py_runtime(
     name = "py3_runtime",
     files = select({
-        "@com_intel_plaidml//toolchain:windows_x86_64": [
+        "@bazel_tools//src/conditions:windows": [
             "@com_intel_plaidml_conda_windows//:python",
         ],
         "//conditions:default": [

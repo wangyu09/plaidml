@@ -1,7 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
 filegroup(
-    name = "docs",
+    name = "runfiles",
     srcs = glob([
         "Doxyfile",
         "conf.py",
@@ -11,19 +11,21 @@ filegroup(
 )
 
 py_binary(
-    name = "watch",
+    name = "docs",
     srcs = [
-        "watch.py",
+        "docs.py",
     ],
     data = [
-        ":docs",
-        "//plaidml2/edsl:docs",
+        ":runfiles",
+        "//plaidml/core:docs",
+        "//plaidml/edsl:docs",
+        "//plaidml/exec:docs",
     ],
     deps = [
-        "//plaidml2:py",
-        "//plaidml2/edsl:py",
-        "//plaidml2/exec:py",
-        "//plaidml2/op:py",
+        "//plaidml:py",
+        "//plaidml/edsl:py",
+        "//plaidml/exec:py",
+        "//plaidml/op:py",
         "//tools/py_setup",
     ],
 )

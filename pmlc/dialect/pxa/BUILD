@@ -1,4 +1,4 @@
-# Copyright 2020 Intel Corporation.
+# Copyright 2020 Intel Corporation
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,6 +8,7 @@ plaidml_cc_library(
     name = "pxa",
     deps = [
         "//pmlc/dialect/pxa/ir",
+        "//pmlc/dialect/pxa/analysis",
         "//pmlc/dialect/pxa/transforms",
     ],
 )

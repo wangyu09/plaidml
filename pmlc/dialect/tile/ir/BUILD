@@ -8,7 +8,10 @@ load("//bzl:plaidml.bzl", "plaidml_cc_library", "plaidml_cc_test")
 filegroup(
     name = "td_files",
     srcs = [
+        "base.td",
+        "builder.td",
         "interfaces.td",
+        "ops.td",
         "//pmlc/dialect/eltwise/ir:td_files",
     ],
 )
@@ -61,10 +64,8 @@ plaidml_cc_library(
     deps = [
         ":gen-interfaces",
         ":gen-ops",
-        "//base/util",
         "//pmlc/dialect/eltwise/ir",
         "//pmlc/util",
-        "//tile/base",
         "@llvm-project//llvm:support",
         "@llvm-project//mlir:IR",
     ],

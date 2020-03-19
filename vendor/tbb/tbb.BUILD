@@ -21,36 +21,40 @@ copy_file(
 
 cc_library(
     name = "tbb",
-    srcs = glob([
-        "src/rml/client/rml_tbb.cpp",
-        "src/rml/**/*.h",
-        "src/tbb/*.cpp",
-        "src/tbb/*.h",
-    ]) + select({
-        "@com_intel_plaidml//toolchain:windows_x86_64": [
+    srcs = glob(
+        [
+            "src/rml/client/rml_tbb.cpp",
+            "src/rml/**/*.h",
+            "src/tbb/*.cpp",
+            "src/tbb/*.h",
+        ],
+        exclude = ["src/tbb/tbb_bind.cpp"],
+    ) + select({
+        "@bazel_tools//src/conditions:windows": [
             ":gen_cpu_ctl_env",
         ],
         "//conditions:default": [],
     }),
     hdrs = glob([
         "include/serial/**",
-        "include/tbb/**/**",
+        "include/tbb/**/*",
+        "include/tbb/*",
     ]) + [
         ":version_string",
     ],
     copts = [
         "-Iexternal/tbb/src",
     ] + select({
-        "@com_intel_plaidml//toolchain:windows_x86_64": [],
-        "@com_intel_plaidml//toolchain:macos_x86_64": [
+        "@com_intel_plaidml//:clang": [
             "-mrtm",
         ],
-        "@com_intel_plaidml//toolchain:linux_x86_64": [
+        "@com_intel_plaidml//:gcc": [
             "-mrtm",
             # this prevents segfaults
             # see: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html
             "-flifetime-dse=1",
         ],
+        "//conditions:default": [],
     }),
     defines = [
         "TBB_SUPPRESS_DEPRECATED_MESSAGES=1",
@@ -62,7 +66,7 @@ cc_library(
         "__TBB_DYNAMIC_LOAD_ENABLED=0",
         "__TBB_SOURCE_DIRECTLY_INCLUDED=1",
     ] + select({
-        "@com_intel_plaidml//toolchain:windows_x86_64": [
+        "@bazel_tools//src/conditions:windows": [
             "__TBB_CPU_CTL_ENV_PRESENT=1",
             "__TBB_x86_64=1",
             "TBB_USE_THREADING_TOOLS",

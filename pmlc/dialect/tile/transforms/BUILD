@@ -8,17 +8,18 @@ plaidml_cc_library(
     name = "lib",
     srcs = [
         "contraction.cc",
+        "padding.cc",
     ],
     hdrs = [
         "contraction.h",
+        "padding.h",
         "passes.h",
     ],
     deps = [
-        "//base/util",
         "//pmlc/dialect/tile/ir",
         "//pmlc/util",
-        "//tile/bilp",
-        "//tile/math",
+        "//pmlc/util/bilp",
+        "//pmlc/util/math",
         "@llvm-project//llvm:support",
         "@llvm-project//mlir:IR",
     ],
@@ -26,7 +27,10 @@ plaidml_cc_library(
 
 plaidml_cc_library(
     name = "transforms",
-    srcs = ["registration.cc"],
+    srcs = [
+        "constant_types.cc",
+        "registration.cc",
+    ],
     deps = [":lib"],
     alwayslink = 1,
 )

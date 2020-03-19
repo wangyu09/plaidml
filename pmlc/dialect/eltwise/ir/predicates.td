@@ -16,7 +16,7 @@ class HasFolder {
 // Whether a type is a ScalarType.
 def IsScalarPred : And<[
     CPred<"$_self.isa<ScalarType>()">,
-    CPred<"$_self.cast<ScalarType>().type() != DataType::INVALID">
+    CPred<"$_self.cast<ScalarType>().type() != DataType::invalid">
   ]>;
 
 def AnyScalar : Type<Or<[
@@ -26,37 +26,38 @@ def AnyScalar : Type<Or<[
 
 def ScalarBool : Type<And<[
     IsScalarPred,
-    CPred<"$_self.cast<ScalarType>().type() == DataType::BOOLEAN">
+    CPred<"$_self.cast<ScalarType>().type() == DataType::u1">
   ]>, "scalar-bool">;
 
 def ScalarIndex : Type<And<[
     IsScalarPred,
-    CPred<"$_self.cast<ScalarType>().type() == DataType::INT32">
+    CPred<"$_self.cast<ScalarType>().type() == DataType::i32">
   ]>, "scalar-index">;
 
 def ScalarUINT32 : Type<And<[
     IsScalarPred,
-    CPred<"$_self.cast<ScalarType>().type() == DataType::UINT32">
+    CPred<"$_self.cast<ScalarType>().type() == DataType::u32">
   ]>, "scalar-u32">;
 
 def AnyScalarFloat : Type<And<[
     IsScalarPred,
-    CPred<"is_float($_self.cast<ScalarType>().type())">
+    CPred<"isFloat($_self.cast<ScalarType>().type())">
   ]>, "scalar-float">;
 
-def AnyScalarInteger : Type<And<[
+def AnyScalarSigned : Type<And<[
     IsScalarPred,
-    CPred<"is_int($_self.cast<ScalarType>().type())">
-  ]>, "scalar-integer">;
+    CPred<"isSigned($_self.cast<ScalarType>().type())">
+  ]>, "scalar-signed">;
 
 def AnyScalarUnsigned : Type<And<[
     IsScalarPred,
-    CPred<"is_uint($_self.cast<ScalarType>().type())">
+    CPred<"isUnsigned($_self.cast<ScalarType>().type())">
   ]>, "scalar-unsigned">;
 
-def AnyScalarUnsignedOrInteger : Type<Or<[
-    AnyScalarInteger.predicate, AnyScalarUnsigned.predicate
-  ]>, "scalar-unsigned-or-integer">;
+def AnyScalarInteger : Type<And<[
+    IsScalarPred,
+    CPred<"isInteger($_self.cast<ScalarType>().type())">
+  ]>, "scalar-integer">;
 
 def IndexLike : Type<Or<[
     Index.predicate,
@@ -89,15 +90,15 @@ def EltwiseInteger : TypeConstraint<Or<[
     RankedTensorOf<[AnyScalarInteger]>.predicate
   ]>, "eltwise-integer">;
 
+def EltwiseSigned : TypeConstraint<Or<[
+    AnyScalarSigned.predicate,
+    RankedTensorOf<[AnyScalarSigned]>.predicate
+  ]>, "eltwise-signed">;
+
 def EltwiseUnsigned : TypeConstraint<Or<[
     AnyScalarUnsigned.predicate,
     RankedTensorOf<[AnyScalarUnsigned]>.predicate
   ]>, "eltwise-unsigned">;
-
-def EltwiseUnsignedOrInteger : TypeConstraint<Or<[
-  AnyScalarUnsignedOrInteger.predicate,
-    RankedTensorOf<[AnyScalarUnsignedOrInteger]>.predicate
-  ]>, "eltwise-unsigned-or-integer">;
 
 def EltwiseIndex : Type<Or<[
     IndexLike.predicate,

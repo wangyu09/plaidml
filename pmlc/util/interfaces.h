@@ -13,11 +13,12 @@ using mlir::ArrayRef;
 using mlir::Location;
 using mlir::OpBuilder;
 using mlir::Operation;
+using mlir::OperationState;
 using mlir::OpInterface;
 using mlir::Type;
 using mlir::Value;
 
 #include "pmlc/util/interfaces.h.inc"
 
-}  // namespace util
-}  // namespace pmlc
+} // namespace util
+} // namespace pmlc

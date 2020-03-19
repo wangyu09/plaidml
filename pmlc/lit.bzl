@@ -4,8 +4,14 @@
 """
 
 # Default values used by the test runner.
-_default_test_file_exts = ["mlir", "pbtxt", "td"]
+_default_test_file_exts = [
+    "mlir",
+    "pbtxt",
+    "td",
+]
+
 _default_size = "small"
+
 _default_tags = []
 
 # These are patterns which we should never match, for tests, subdirectories, or
@@ -39,13 +45,13 @@ def _run_lit_test(name, data, size, tags, features):
         name = name,
         srcs = ["@llvm-project//llvm:lit"],
         tags = tags,
-        args = [
-            "pmlc --config-prefix=runlit -v",
-        ] + features,
+        args = ["pmlc", "-v"] + features,
         data = data + [
+            "//pmlc/tools/pmlc-jit",
             "//pmlc/tools/pmlc-opt",
             "//pmlc/tools/pmlc-translate",
-            "//pmlc:litfiles",
+            "//pmlc/tools/pmlc-vulkan-runner",
+            "//pmlc:lit_files",
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:count",
             "@llvm-project//llvm:not",
@@ -86,17 +92,23 @@ def glob_lit_tests(
         exclude = exclude,
     )
 
+    local_cfg = native.glob(["lit.local.cfg"])
+
+    native.filegroup(
+        name = "all",
+        srcs = tests,
+        visibility = ["//visibility:public"],
+    )
+
     # Run tests individually such that errors can be attributed to a specific
     # failure.
-    for i in range(len(tests)):
-        curr_test = tests[i]
-
+    for curr_test in tests:
         # Instantiate this test with updated parameters.
         lit_test(
             name = curr_test,
-            data = data + per_test_extra_data.pop(curr_test, []),
+            data = data + per_test_extra_data.pop(curr_test, []) + local_cfg,
             size = size_override.pop(curr_test, default_size),
-            tags = ["windows_fail"] + default_tags + tags_override.pop(curr_test, []),
+            tags = ["lit"] + default_tags + tags_override.pop(curr_test, []),
             features = features,
         )
 

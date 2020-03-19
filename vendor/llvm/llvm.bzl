@@ -61,7 +61,7 @@ def gentbl(name, tblgen, td_file, td_srcs, tbl_outs, library = True, **kwargs):
             message = "Generating code from table: %s" % td_file,
             cmd = (("$(location %s) " + "-I external/llvm-project/llvm/include " +
                     "-I external/llvm-project/clang/include " +
-                    "-I $$(dirname $(location %s)) " + "%s $(location %s) -o $@") % (
+                    "-I $$(dirname $(location %s)) " + "%s $(location %s) --long-string-literals=0 -o $@") % (
                 tblgen,
                 td_file,
                 opts,
@@ -303,7 +303,7 @@ win32_cmake_vars = {
 # TODO(phawkins): use a better method to select the right host triple, rather
 # than hardcoding x86_64.
 llvm_all_cmake_vars = select({
-    "@com_intel_plaidml//toolchain:macos_x86_64": cmake_var_string(
+    "@bazel_tools//src/conditions:darwin_x86_64": cmake_var_string(
         _dict_add(
             cmake_vars,
             llvm_target_cmake_vars("X86", "x86_64-apple-darwin"),
@@ -311,7 +311,7 @@ llvm_all_cmake_vars = select({
             darwin_cmake_vars,
         ),
     ),
-    "@com_intel_plaidml//toolchain:windows_x86_64": cmake_var_string(
+    "@bazel_tools//src/conditions:windows": cmake_var_string(
         _dict_add(
             cmake_vars,
             llvm_target_cmake_vars("X86", "x86_64-pc-win32"),
@@ -329,7 +329,7 @@ llvm_all_cmake_vars = select({
 })
 
 llvm_linkopts = select({
-    "@com_intel_plaidml//toolchain:windows_x86_64": [],
+    "@bazel_tools//src/conditions:windows": [],
     "//conditions:default": [
         "-ldl",
         "-lm",
@@ -338,7 +338,7 @@ llvm_linkopts = select({
 })
 
 llvm_defines = select({
-    "@com_intel_plaidml//toolchain:windows_x86_64": [
+    "@bazel_tools//src/conditions:windows": [
         "_CRT_SECURE_NO_DEPRECATE",
         "_CRT_SECURE_NO_WARNINGS",
         "_CRT_NONSTDC_NO_DEPRECATE",
@@ -358,7 +358,7 @@ llvm_defines = select({
 ]
 
 llvm_copts = select({
-    "@com_intel_plaidml//toolchain:windows_x86_64": [
+    "@com_intel_plaidml//:msvc": [
         "-Zc:inline",
         "-Zc:strictStrings",
         "-Zc:rvalueCast",
@@ -412,7 +412,7 @@ llvm_copts = select({
 
 def llvm_support_platform_specific_srcs_glob():
     return select({
-        "@com_intel_plaidml//toolchain:windows_x86_64": native.glob([
+        "@bazel_tools//src/conditions:windows": native.glob([
             "lib/Support/Windows/*.inc",
             "lib/Support/Windows/*.h",
         ]),

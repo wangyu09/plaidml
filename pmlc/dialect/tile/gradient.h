@@ -3,79 +3,67 @@
 #pragma once
 
 #include <functional>
-#include <map>
-#include <string>
-#include <unordered_map>
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 
 #include "pmlc/dialect/tile/ir/ops.h"
 
 namespace mlir {
 class Value;
 class Operation;
-}  // namespace mlir
+} // namespace mlir
 
 namespace pmlc::dialect::tile {
 
 class TileBuilder;
 
-// Deriv is a function that builds the gradients ("dXs") from the following inputs:
+// Deriv is a function that builds the gradients ("dXs") from the following
+// inputs:
 //  1. Y: The Value for the node
 //  2. dY: The Value for the already-computed gradient of the node's output
 //  3. Xs: The Values for the node's inputs
-using Deriv = std::function<llvm::SmallVector<mlir::Value, 3>(  // TODO: Size?
-    mlir::Value Y,                                              //
-    mlir::Value dY,                                             //
-    const llvm::SmallVector<mlir::Value, 3>& Xs,                // TODO: Size?
-    void* user_fn,                                              //
-    void* user_ctx)>;
+using Deriv = std::function<llvm::SmallVector<mlir::Value, 3>( // TODO: Size?
+    mlir::Value Y, mlir::Value dY,
+    const llvm::SmallVector<mlir::Value, 3> &Xs, // TODO: Size?
+    void *user_fn, void *user_ctx)>;
 
-// A DerivEntry bundles the Deriv with the FFI-processed user function & context needed to call it from Values
+// A DerivEntry bundles the Deriv with the FFI-processed user function & context
+// needed to call it from Values
 struct DerivEntry {
   Deriv fn;
-  void* user_fn;
-  void* user_ctx;
+  void *user_fn;
+  void *user_ctx;
 };
 
 class DerivRegistry {
- public:
-  static DerivRegistry* Instance() {
-    static DerivRegistry registry;
-    return &registry;
-  }
+public:
+  static DerivRegistry *Instance();
 
-  void Register(const std::string& name, const Deriv& fn, void* user_fn, void* user_ctx) {  //
-    if (registry_.count(name)) {
-      throw std::runtime_error("Attempted to register deriv '" + name + "', which was already in the DerivRegistry");
-    }
-    registry_[name] = DerivEntry{fn, user_fn, user_ctx};
-  }
+  void Register(llvm::StringRef name, const Deriv &fn, void *user_fn,
+                void *user_ctx);
 
-  DerivEntry Resolve(const std::string& name) const {
-    auto it = registry_.find(name);
-    if (it == registry_.end()) {
-      throw std::runtime_error("Invalid derivative: Unknown function " + name);
-    }
-    return it->second;
-  }
+  DerivEntry Resolve(llvm::StringRef name) const;
 
- private:
-  std::unordered_map<std::string, DerivEntry> registry_;
+private:
+  llvm::StringMap<DerivEntry> registry;
 };
 
 class Gradient {
- public:
-  explicit Gradient(mlir::Value loss, TileBuilder* builder);
+public:
+  explicit Gradient(mlir::Value loss, TileBuilder *builder);
   void ComputeOperandDerivs(mlir::Value val);
   mlir::Value GetDerivative(mlir::Value val);
 
- private:
+private:
   mlir::Value DeriveEltwise(mlir::Value dout, mlir::Value out, size_t idx);
   mlir::Value DeriveContraction(mlir::Value dout, mlir::Value out, size_t idx);
-  mlir::Value DeriveSpecial(const mlir::Value dout, SpecialOp* op, size_t val);  // TODO
+  mlir::Value DeriveSpecial(const mlir::Value dout, SpecialOp *op,
+                            size_t val); // TODO
   void AddToGradient(Value source_op, Value deriv);
 
-  TileBuilder* builder_;
+  TileBuilder *builder_;
   llvm::DenseMap<mlir::Value, mlir::Value> grads_;
 };
 
-}  // namespace pmlc::dialect::tile
+} // namespace pmlc::dialect::tile

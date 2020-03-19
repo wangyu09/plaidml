@@ -1,18 +1,15 @@
-# Copyright 2019 Intel Corporation
+# Copyright 2020 Intel Corporation
 
-load("//bzl:conda_repo.bzl", "conda_repo")
-load("//bzl:xsmm_repo.bzl", "xsmm_repo")
 load("//vendor/bazel:repo.bzl", "http_archive")
-load("//vendor/cuda:configure.bzl", "configure_cuda")
-load("//vendor/cm:configure.bzl", "configure_cm")
+load("//vendor/conda:repo.bzl", "conda_repo")
+load("//vendor/openvino:repo.bzl", "openvino_workspace")
+load("//vendor/xsmm:repo.bzl", "xsmm_repo")
 
 # Sanitize a dependency so that it works correctly from code that includes it as a submodule.
 def clean_dep(dep):
     return str(Label(dep))
 
 def plaidml_workspace():
-    configure_toolchain()
-
     http_archive(
         name = "bazel_latex",
         sha256 = "5119802a5fbe2f27914af455c59b4ecdaaf57c0bc6c63da38098a30d94f48c9a",
@@ -33,6 +30,26 @@ def plaidml_workspace():
         url = "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
         sha256 = "3c6a165b6ecc948967a1ead710d4a181d7b0fbcaa183ef7ea84604994966221a",
         strip_prefix = "benchmark-1.5.0",
+    )
+
+    conda_repo(
+        name = "com_intel_plaidml_conda_unix",
+        env = clean_dep("//conda:unix.yml"),
+        build_file = clean_dep("//conda:unix.BUILD"),
+    )
+
+    conda_repo(
+        name = "com_intel_plaidml_conda_windows",
+        env = clean_dep("//conda:windows.yml"),
+        build_file = clean_dep("//conda:windows.BUILD"),
+    )
+
+    http_archive(
+        name = "crosstool_ng_linux_x86_64_gcc_8.3.0",
+        build_file = clean_dep("//toolchain:crosstool_ng/linux_x86_64.BUILD"),
+        sha256 = "091f5732882a499c6b9fb5fcb895176d0c96e958236e16b61d1a9cafec4271ad",
+        strip_prefix = "x86_64-unknown-linux-gnu",
+        url = "https://github.com/plaidml/depot/raw/master/toolchain/gcc-8.3/x86_64-unknown-linux-gnu-20191010.tgz",
     )
 
     http_archive(
@@ -58,19 +75,10 @@ def plaidml_workspace():
     )
 
     http_archive(
-        name = "half",
-        url = "https://github.com/plaidml/depot/raw/master/half-1.11.0.zip",
-        sha256 = "9e5ddb4b43abeafe190e780b5b606b081acb511e6edd4ef6fbe5de863a4affaf",
-        strip_prefix = "half-1.11.0",
-        build_file = clean_dep("//bzl:half.BUILD"),
-    )
-
-    http_archive(
-        name = "jsoncpp",
-        url = "https://github.com/open-source-parsers/jsoncpp/archive/11086dd6a7eba04289944367ca82cea71299ed70.zip",
-        sha256 = "2099839a06c867a8b3abf81b3eb82dc0ed67207fd0d2b940b6cf2efef66fe7d8",
-        strip_prefix = "jsoncpp-11086dd6a7eba04289944367ca82cea71299ed70",
-        build_file = clean_dep("//bzl:jsoncpp.BUILD"),
+        name = "io_bazel_rules_jsonnet",
+        sha256 = "d05d719c4738e8aac5f13b32f745ff4832b9638ecc89ddcb6e36c379a1ada025",
+        strip_prefix = "rules_jsonnet-0.1.0",
+        url = "https://github.com/bazelbuild/rules_jsonnet/archive/0.1.0.zip",
     )
 
     http_archive(
@@ -80,43 +88,20 @@ def plaidml_workspace():
         strip_prefix = "jsonnet-0.13.0",
     )
 
+    LLVM_COMMIT = "216ef5b9abb85a8116366dfa1bd712c988e08cb0"
+    LLVM_SHA256 = "9e55b9835715dc32b17bdb88e68d35440f2077fcaad6ecb59b839e4173d6b55e"
+    LLVM_URL = "https://github.com/plaidml/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)
     http_archive(
-        name = "io_bazel_rules_jsonnet",
-        sha256 = "d05d719c4738e8aac5f13b32f745ff4832b9638ecc89ddcb6e36c379a1ada025",
-        strip_prefix = "rules_jsonnet-0.1.0",
-        url = "https://github.com/bazelbuild/rules_jsonnet/archive/0.1.0.zip",
-    )
-
-    http_archive(
-        name = "minizip",
-        url = "https://github.com/nmoinvaz/minizip/archive/36089398a362a117105ebfcb3751a269c70ab3b7.zip",
-        sha256 = "c47b06ad7ef10d01a8d415b1b8dfb3691dad6ed41b38756fbf8fd6c074480d0f",
-        strip_prefix = "minizip-36089398a362a117105ebfcb3751a269c70ab3b7",
-        build_file = clean_dep("//bzl:minizip.BUILD"),
-    )
-
-    http_archive(
-        name = "opencl_headers",
-        url = "https://github.com/KhronosGroup/OpenCL-Headers/archive/f039db6764d52388658ef15c30b2237bbda49803.zip",
-        sha256 = "b2b813dd88a7c39eb396afc153070f8f262504a7f956505b2049e223cfc2229b",
-        strip_prefix = "OpenCL-Headers-f039db6764d52388658ef15c30b2237bbda49803",
-        build_file = clean_dep("//bzl:opencl_headers.BUILD"),
-    )
-
-    http_archive(
-        name = "cm_headers",
-        url = "https://github.com/intel/cm-compiler/releases/download/Release_20190717/Linux_C_for_Metal_Development_Package_20190717.zip",
-        sha256 = "4549496e3742ade2ff13e804654cb4ee7ddabb3b95dbc1fdeb9ca22141f317d5",
-        strip_prefix = "Linux_C_for_Metal_Development_Package_20190717",
-        build_file = clean_dep("//bzl:cm_headers.BUILD"),
-    )
-
-    http_archive(
-        name = "libva",
-        url = "https://github.com/intel/libva/releases/download/2.5.0/libva-2.5.0.tar.bz2",
-        sha256 = "3aa89cd369a506ac4dbe5de7c0ef5da4f3d220bf986403f02fa1f6f702af6878",
-        strip_prefix = "libva-2.5.0",
-        build_file = clean_dep("//bzl:libva.BUILD"),
+        name = "llvm-project",
+        url = LLVM_URL,
+        sha256 = LLVM_SHA256,
+        strip_prefix = "llvm-project-" + LLVM_COMMIT,
+        link_files = {
+            clean_dep("//vendor/llvm:llvm.BUILD"): "llvm/BUILD.bazel",
+            clean_dep("//vendor/mlir:mlir.BUILD"): "mlir/BUILD.bazel",
+            clean_dep("//vendor/mlir:test.BUILD"): "mlir/test/BUILD.bazel",
+        },
+        override = "PLAIDML_LLVM_REPO",
     )
 
     http_archive(
@@ -142,26 +127,27 @@ def plaidml_workspace():
     )
 
     http_archive(
-        name = "zlib",
-        url = "https://github.com/plaidml/depot/raw/master/zlib-1.2.8.tar.gz",
-        sha256 = "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d",
-        build_file = clean_dep("//bzl:zlib.BUILD"),
+        name = "tbb",
+        url = "https://github.com/intel/tbb/archive/v2020.1.zip",
+        sha256 = "1550c9cbf629435acd6699f9dd3d8841c1d5e0eaf0708f54d328c8cd020951c1",
+        strip_prefix = "oneTBB-2020.1",
+        build_file = clean_dep("//vendor/tbb:tbb.BUILD"),
     )
 
-    configure_protobuf()
-    configure_cuda(name = "cuda")
-    configure_cm(name = "cm")
-
-    conda_repo(
-        name = "com_intel_plaidml_conda_unix",
-        env = clean_dep("//conda:unix.yml"),
-        build_file = clean_dep("//conda:unix.BUILD"),
+    http_archive(
+        name = "volk",
+        url = "https://github.com/zeux/volk/archive/2638ad1b2b40f1ad402a0a6ac55b60bc51a23058.zip",
+        sha256 = "4a5fb828e05d8c86f696f8754e90302d6446b950236256bcb4857408357d2b60",
+        strip_prefix = "volk-2638ad1b2b40f1ad402a0a6ac55b60bc51a23058",
+        build_file = clean_dep("//vendor/volk:volk.BUILD"),
     )
 
-    conda_repo(
-        name = "com_intel_plaidml_conda_windows",
-        env = clean_dep("//conda:windows.yml"),
-        build_file = clean_dep("//conda:windows.BUILD"),
+    http_archive(
+        name = "vulkan_headers",
+        url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/v1.2.132.zip",
+        sha256 = "e6b5418e3d696ffc7c97991094ece7cafc4c279c8a88029cc60e587bc0c26068",
+        strip_prefix = "Vulkan-Headers-1.2.132",
+        build_file = clean_dep("//vendor/vulkan_headers:vulkan_headers.BUILD"),
     )
 
     xsmm_repo(
@@ -169,81 +155,14 @@ def plaidml_workspace():
         url = "https://github.com/hfp/libxsmm/archive/1.12.1.zip",
         sha256 = "451ec9d30f0890bf3081aa3d0d264942a6dea8f9d29c17bececc8465a10a832b",
         strip_prefix = "libxsmm-1.12.1",
-        build_file = clean_dep("//bzl:xsmm.BUILD"),
+        build_file = clean_dep("//vendor/xsmm:xsmm.BUILD"),
     )
 
     http_archive(
-        name = "tbb",
-        url = "https://github.com/intel/tbb/archive/tbb_2019.zip",
-        sha256 = "078c969b1bbd6b2afb01f65cf9d513bb80636363b206f1e2ae221b614d7ae197",
-        strip_prefix = "tbb-tbb_2019",
-        build_file = clean_dep("//vendor/tbb:tbb.BUILD"),
+        name = "zlib",
+        url = "https://github.com/plaidml/depot/raw/master/zlib-1.2.8.tar.gz",
+        sha256 = "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d",
+        build_file = clean_dep("//bzl:zlib.BUILD"),
     )
 
-    LLVM_COMMIT = "a21beccea2020f950845cbb68db663d0737e174c"
-    LLVM_SHA256 = "73682f2b78c1c46621afb69b850e50c4d787f9c77fb3b53ac50fc42ffbac0493"
-    LLVM_URL = "https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)
-    http_archive(
-        name = "llvm-project",
-        url = LLVM_URL,
-        sha256 = LLVM_SHA256,
-        strip_prefix = "llvm-project-" + LLVM_COMMIT,
-        link_files = {
-            clean_dep("//vendor/llvm:llvm.BUILD"): "llvm/BUILD.bazel",
-            clean_dep("//vendor/mlir:mlir.BUILD"): "mlir/BUILD.bazel",
-        },
-        patches = [clean_dep("//vendor/mlir:mlir.patch")],
-        override = "PLAIDML_LLVM_REPO",
-    )
-
-def configure_protobuf():
-    http_archive(
-        name = "com_google_protobuf",
-        url = "https://github.com/protocolbuffers/protobuf/archive/v3.9.0.tar.gz",
-        sha256 = "2ee9dcec820352671eb83e081295ba43f7a4157181dad549024d7070d079cf65",
-        strip_prefix = "protobuf-3.9.0",
-        build_file = clean_dep("//bzl:protobuf.BUILD"),
-    )
-
-    http_archive(
-        name = "rules_cc",
-        sha256 = "29daf0159f0cf552fcff60b49d8bcd4f08f08506d2da6e41b07058ec50cfeaec",
-        strip_prefix = "rules_cc-b7fe9697c0c76ab2fd431a891dbb9a6a32ed7c3e",
-        url = "https://github.com/bazelbuild/rules_cc/archive/b7fe9697c0c76ab2fd431a891dbb9a6a32ed7c3e.tar.gz",
-    )
-
-    http_archive(
-        name = "rules_java",
-        sha256 = "f5a3e477e579231fca27bf202bb0e8fbe4fc6339d63b38ccb87c2760b533d1c3",
-        strip_prefix = "rules_java-981f06c3d2bd10225e85209904090eb7b5fb26bd",
-        url = "https://github.com/bazelbuild/rules_java/archive/981f06c3d2bd10225e85209904090eb7b5fb26bd.tar.gz",
-    )
-
-    http_archive(
-        name = "rules_proto",
-        sha256 = "88b0a90433866b44bb4450d4c30bc5738b8c4f9c9ba14e9661deb123f56a833d",
-        strip_prefix = "rules_proto-b0cc14be5da05168b01db282fe93bdf17aa2b9f4",
-        url = "https://github.com/bazelbuild/rules_proto/archive/b0cc14be5da05168b01db282fe93bdf17aa2b9f4.tar.gz",
-    )
-
-    http_archive(
-        name = "six_archive",
-        url = "https://bitbucket.org/gutworth/six/get/1.10.0.zip",
-        sha256 = "016c8313d1fe8eefe706d5c3f88ddc51bd78271ceef0b75e0a9b400b6a8998a9",
-        strip_prefix = "gutworth-six-e5218c3f66a2",
-        build_file = clean_dep("//bzl:six.BUILD"),
-    )
-
-    native.bind(
-        name = "six",
-        actual = "@six_archive//:six",
-    )
-
-def configure_toolchain():
-    http_archive(
-        name = "crosstool_ng_linux_x86_64_gcc_8.3.0",
-        build_file = clean_dep("//toolchain:crosstool_ng/linux_x86_64.BUILD"),
-        sha256 = "091f5732882a499c6b9fb5fcb895176d0c96e958236e16b61d1a9cafec4271ad",
-        strip_prefix = "x86_64-unknown-linux-gnu",
-        url = "https://github.com/plaidml/depot/raw/master/toolchain/gcc-8.3/x86_64-unknown-linux-gnu-20191010.tgz",
-    )
+    openvino_workspace()
