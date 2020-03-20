@@ -3,9 +3,9 @@ from collections import OrderedDict
 
 import numpy as np
 import math
-import plaidml2 as plaidml
-import plaidml2.edsl as edsl
-import plaidml2.exec as plaidml_exec
+import plaidml as plaidml
+import plaidml.edsl as edsl
+import plaidml.exec as plaidml_exec
 
 
 def sq(X):

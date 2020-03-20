@@ -1,7 +1,7 @@
 load("@bazel_latex//:latex.bzl", "latex_document")
 
 latex_document(
-    name = "docs",
+    name = "docs_storti",
     srcs = [
         "toroidal_shell_moment.jpg",
         "uw_torus_doc.tex",
