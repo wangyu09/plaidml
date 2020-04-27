@@ -12,7 +12,7 @@
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/SmallString.h"
 
-#include "pmlc/conversion/gpu/pass_detail.h"
+#include "pmlc/conversion/gpu_to_vulkan/pass_detail.h"
 #include "pmlc/util/logging.h"
 
 namespace pmlc::conversion::gpu {

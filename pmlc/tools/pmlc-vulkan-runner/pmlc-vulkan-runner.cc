@@ -28,7 +28,7 @@
 
 #include "pmlc/compiler/executable.h"
 #include "pmlc/compiler/program.h"
-#include "pmlc/conversion/gpu/lowering.h"
+#include "pmlc/conversion/gpu_to_vulkan/lowering.h"
 #include "pmlc/util/all_dialects.h"
 #include "pmlc/util/all_passes.h"
 #include "pmlc/util/env.h"

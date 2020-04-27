@@ -24,7 +24,7 @@
 #include "mlir/Dialect/SPIRV/Serialization.h"
 #include "mlir/Dialect/SPIRV/TargetAndABI.h"
 
-#include "pmlc/conversion/gpu/pass_detail.h"
+#include "pmlc/conversion/gpu_to_vulkan/pass_detail.h"
 using namespace mlir; // NOLINT[build/namespaces]
 
 template <typename OpTy>

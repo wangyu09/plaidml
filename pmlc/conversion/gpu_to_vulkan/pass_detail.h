@@ -5,6 +5,6 @@
 namespace pmlc::conversion::gpu {
 
 #define GEN_PASS_CLASSES
-#include "pmlc/conversion/gpu/passes.h.inc"
+#include "pmlc/conversion/gpu_to_vulkan/passes.h.inc"
 
 } // namespace pmlc::conversion::gpu

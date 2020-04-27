@@ -226,10 +226,6 @@ struct Registration {
   Registration() {
     using pmlc::compiler::registerSymbol;
 
-    // RunnerUtils functions
-    registerSymbol("_mlir_ciface_print_memref_f32",
-                   reinterpret_cast<void *>(_mlir_ciface_print_memref_f32));
-
     // Vulkan Runtime functions
     registerSymbol("initVulkan", reinterpret_cast<void *>(initVulkan));
     registerSymbol("deinitVulkan", reinterpret_cast<void *>(deinitVulkan));

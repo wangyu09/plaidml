@@ -19,7 +19,7 @@
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/StandardTypes.h"
 
-#include "pmlc/conversion/gpu/pass_detail.h"
+#include "pmlc/conversion/gpu_to_vulkan/pass_detail.h"
 
 using namespace mlir; // NOLINT[build/namespaces]
 
