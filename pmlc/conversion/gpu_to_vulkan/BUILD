@@ -26,6 +26,7 @@ plaidml_cc_library(
         "gpu_to_vulkan.cc",
         "kernel_outlining.cc",
         "llvm_lowering.cc",
+        "gpu_to_vulkan_dialect.cc",
     ],
     hdrs = [
         "lowering.h",
@@ -35,5 +36,6 @@ plaidml_cc_library(
         "//pmlc/util",
         "@llvm-project//mlir:GPUToSPIRVTransforms",
         "@llvm-project//mlir:GPUTransforms",
+        "//pmlc/dialect/vulkan/ir",
     ],
 )

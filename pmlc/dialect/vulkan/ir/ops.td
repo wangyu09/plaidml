@@ -49,12 +49,73 @@ def Vk_Dispatch : Vk_Op<"dispatch"> {
     Index:$workgroup_y,
     Index:$workgroup_z
   );
-
   let assemblyFormat = [{
     type($module) $module `,` `entry_point` `=` $entry_point `,`
     `workgroup` `=` `[` $workgroup_x `,` $workgroup_y `,` $workgroup_z `]`
     attr-dict
   }];
+}
+
+def Vk_InitVulkanCall : Vk_Op<"initvulkancall"> {
+  let results = (outs VkBuffer);
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, Type resultType, "
+    "FlatSymbolRefAttr callee",
+    [{
+      result.addAttribute("callee", callee);
+      result.addTypes(resultType);
+    }]>,
+  ];
+}
+
+def Vk_CreateVulkanLaunchKernelAction : Vk_Op<"createVulkanLaunchKernelAction"> {
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, FlatSymbolRefAttr callee, "
+    "ArrayRef<Value> operands = {}",
+    [{
+      result.addAttribute("callee", callee);
+    }]>,
+  ];
+}
+
+def Vk_SetLaunchKernelAction : Vk_Op<"setLaunchKernelAction"> {
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, FlatSymbolRefAttr callee, "
+    "ArrayRef<Value> operands = {}",
+    [{
+      result.addAttribute("callee", callee);
+    }]>,
+  ];
+}
+
+def Vk_AddVulkanLaunchActionToSchedule : Vk_Op<"AddVulkanLaunchActionToSchedule"> {
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, FlatSymbolRefAttr callee, "
+    "ArrayRef<Value> operands = {}",
+    [{
+      result.addAttribute("callee", callee);
+    }]>,
+  ];
+}
+
+def Vk_SubmitCommandBuffers : Vk_Op<"SubmitCommandBuffers"> {
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, FlatSymbolRefAttr callee, "
+    "ArrayRef<Value> operands = {}",
+    [{
+      result.addAttribute("callee", callee);
+    }]>,
+  ];
+}
+
+def Vk_DeinitVulkan : Vk_Op<"DeinitVulkan"> {
+  let builders = [OpBuilder<
+    "Builder *builder, OperationState &result, FlatSymbolRefAttr callee, "
+    "ArrayRef<Value> operands = {}",
+    [{
+      result.addAttribute("callee", callee);
+    }]>,
+  ];
 }
 
 #endif // __VULKAN_OPS__

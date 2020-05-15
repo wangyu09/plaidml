@@ -36,13 +36,15 @@ plaidml_cc_library(
     name = "ir",
     srcs = [
         "ops.cc",
-        "ops.cc.inc",
+        "types.cc",
     ],
     hdrs = [
         "ops.h",
+        "types.h",
     ],
     deps = [
         ":gen-ops",
+        "//pmlc/util",
         "@llvm-project//llvm:support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:StandardOps",

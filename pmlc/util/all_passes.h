@@ -29,6 +29,7 @@
 #include "mlir/Transforms/ViewOpGraph.h"
 #include "mlir/Transforms/ViewRegionGraph.h"
 
+#include "pmlc/conversion/gpu_to_vulkan/lowering.h"
 #include "pmlc/conversion/pxa_to_affine/passes.h"
 #include "pmlc/conversion/stdx_to_llvm/passes.h"
 #include "pmlc/conversion/tile_to_pxa/passes.h"
@@ -118,6 +119,10 @@ inline void registerAllPasses() {
   // Target: x86
 #define GEN_PASS_REGISTRATION
 #include "pmlc/target/x86/passes.h.inc"
+
+  // Target: gpu_to_vulkan
+#define GEN_PASS_REGISTRATION
+#include "pmlc/conversion/gpu_to_vulkan/passes.h.inc"
 }
 
 } // namespace mlir

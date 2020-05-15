@@ -2,15 +2,22 @@
 
 #pragma once
 
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/StandardTypes.h"
+
+#include "pmlc/dialect/vulkan/ir/types.h"
 
 namespace pmlc::dialect::vulkan {
 
 using llvm::ArrayRef;
 using llvm::StringRef;
 using mlir::Builder;
+using mlir::FlatSymbolRefAttr;
 using mlir::LogicalResult;
+using mlir::MemRefType;
 using mlir::NamedAttribute;
 using mlir::Op;
 using mlir::OpAsmParser;

@@ -13,4 +13,9 @@ def GpuKernelOutliningPass : Pass<"pmlc-kernel_outlining", "mlir::ModuleOp"> {
   let constructor = "pmlc::conversion::gpu::createGpuKernelOutliningPass()";
 }
 
+def ConvertGpuLaunchFuncToVulkanDialect : Pass<"pmlc-convert-gpu-to-vulkan-dialect", "mlir::ModuleOp"> {
+  let summary = "Convert gpu.launch_func op to Vulkan dialect ops";
+  let constructor = "pmlc::conversion::gpu::createConvertGpuLaunchFuncToVulkanDialectPass()";
+}
+
 #endif // __PMLC_CONVERSION_GPU_TO_VULKAN_PASSES__

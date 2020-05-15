@@ -65,6 +65,7 @@ void addToPipeline(OpPassManager &pm) {
 
   // GPU to Vulkan.
   pm.addPass(conversion::gpu::createConvertGpuLaunchFuncToVulkanCallsPass());
+  // pm.addPass(conversion::gpu::createConvertGpuLaunchFuncToVulkanDialectPass());
   pm.addPass(conversion::gpu::createLLVMLoweringPass());
 }
 

@@ -17,4 +17,7 @@ std::unique_ptr<mlir::Pass> createConvertGpuLaunchFuncToVulkanCallsPass();
 
 // Add UnrankedMemRef conversion in barePtrFuncArgTypeConverter
 std::unique_ptr<mlir::Pass> createLLVMLoweringPass();
+
+std::unique_ptr<mlir::Pass> createConvertGpuLaunchFuncToVulkanDialectPass();
+
 } // namespace pmlc::conversion::gpu

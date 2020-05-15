@@ -51,6 +51,7 @@ plaidml_cc_library(
         "//pmlc/dialect/stdx",
         "//pmlc/dialect/tile",
         "//pmlc/dialect/xsmm",
+        "//pmlc/dialect/vulkan",
         "//pmlc/target/intel_gen",
         "//pmlc/target/x86",
         "@llvm-project//mlir:AllPassesAndDialectsNoRegistration",
